@@ -5,14 +5,9 @@ import { useState } from "react";
 type ResultadoRuta = {
   origen: string;
   destino: string;
+  vehiculo: string;
   distanciaKm: number;
   duracionMinutos: number;
-};
-
-type Lugar = {
-  lat: string;
-  lon: string;
-  display_name: string;
 };
 
 export default function Hogar() {
@@ -24,29 +19,20 @@ export default function Hogar() {
   const [error, establecerError] = useState("");
   const [cargando, conjuntoCargando] = useState(false);
 
-  async function buscarLugar(texto: string): Promise<Lugar | null> {
-    const respuesta = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=ar&q=${encodeURIComponent(
-        texto
-      )}`,
-      {
-        headers: {
-          Accept: "application/json",
-        },
-      }
-    );
+  async function buscarLugar(lugar: string) {
+    const url =
+      `https://photon.komoot.io/api/?q=${encodeURIComponent(lugar)}` +
+      `&limit=1&lang=es`;
+
+    const respuesta = await fetch(url);
 
     if (!respuesta.ok) {
       throw new Error("No se pudo consultar el servicio de mapas.");
     }
 
-    const datos: Lugar[] = await respuesta.json();
+    const datos = await respuesta.json();
 
-    if (!datos || datos.length === 0) {
-      return null;
-    }
-
-    return datos[0];
+    return datos.features?.[0];
   }
 
   async function planificarRuta() {
@@ -61,33 +47,47 @@ export default function Hogar() {
     setResultado(null);
 
     try {
-      const origenLugar = await buscarLugar(origen);
-      const destinoLugar = await buscarLugar(destino);
+      // Buscar origen
+      const origenCaracteristica = await buscarLugar(origen);
 
-      if (!origenLugar || !destinoLugar) {
+      // Buscar destino
+      const destinoCaracteristica = await buscarLugar(destino);
+
+      if (!origenCaracteristica || !destinoCaracteristica) {
         throw new Error(
-          "No se pudo localizar uno de los lugares. Probá agregando ciudad y provincia."
+          "No se pudo encontrar uno de los lugares. Probá agregando ciudad y provincia."
         );
       }
 
-      const origenLon = Number(origenLugar.lon);
-      const origenLat = Number(origenLugar.lat);
+      // Photon entrega las coordenadas como:
+      // [longitud, latitud]
+      const origenCoordenadas =
+        origenCaracteristica.geometry?.coordinates;
 
-      const destinoLon = Number(destinoLugar.lon);
-      const destinoLat = Number(destinoLugar.lat);
+      const destinoCoordenadas =
+        destinoCaracteristica.geometry?.coordinates;
 
       if (
-        !Number.isFinite(origenLon) ||
-        !Number.isFinite(origenLat) ||
-        !Number.isFinite(destinoLon) ||
-        !Number.isFinite(destinoLat)
+        !origenCoordenadas ||
+        !destinoCoordenadas ||
+        origenCoordenadas.length < 2 ||
+        destinoCoordenadas.length < 2
       ) {
-        throw new Error("Las coordenadas obtenidas no son válidas.");
+        throw new Error(
+          "No se pudieron obtener las coordenadas de los lugares."
+        );
       }
 
-      const rutaRespuesta = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${origenLon},${origenLat};${destinoLon},${destinoLat}?overview=false`
-      );
+      const [origenLon, origenLat] = origenCoordenadas;
+      const [destinoLon, destinoLat] = destinoCoordenadas;
+
+      // Solicitar ruta a OSRM
+      const rutaUrl =
+        `https://router.project-osrm.org/route/v1/driving/` +
+        `${origenLon},${origenLat};${destinoLon},${destinoLat}` +
+        `?overview=false&steps=false`;
+
+      const rutaRespuesta = await fetch(rutaUrl);
 
       if (!rutaRespuesta.ok) {
         throw new Error("El servicio de rutas no respondió.");
@@ -95,23 +95,32 @@ export default function Hogar() {
 
       const datosDeRuta = await rutaRespuesta.json();
 
-      const ruta = datosDeRuta?.routes?.[0];
+      const ruta = datosDeRuta.routes?.[0];
 
       if (!ruta) {
         throw new Error("No se encontró una ruta entre los lugares.");
       }
 
+      const distanciaKm =
+        Math.round((ruta.distance / 1000) * 10) / 10;
+
+      const duracionMinutos =
+        Math.round(ruta.duration / 60);
+
       setResultado({
-        origen: origenLugar.display_name,
-        destino: destinoLugar.display_name,
-        distanciaKm: Math.round((ruta.distance / 1000) * 10) / 10,
-        duracionMinutos: Math.round(ruta.duration / 60),
+        origen,
+        destino,
+        vehiculo,
+        distanciaKm,
+        duracionMinutos,
       });
-    } catch (err) {
-      if (err instanceof Error) {
-        establecerError(err.message);
+    } catch (error) {
+      if (error instanceof Error) {
+        establecerError(error.message);
       } else {
-        establecerError("Ocurrió un error al calcular la ruta.");
+        establecerError(
+          "Ocurrió un error al calcular la ruta."
+        );
       }
 
       setResultado(null);
@@ -136,97 +145,303 @@ export default function Hogar() {
   }
 
   return (
-    <main className="recipiente">
-      <div className="tarjeta">
-        <h1>🚚 Camionero AR</h1>
-
-        <p>
-          Planificador de rutas para transporte pesado en Argentina.
-        </p>
-
-        <hr />
-
-        <h2>Planificar viaje</h2>
-
-        <label htmlFor="origen">Origen</label>
-
-        <input
-          id="origen"
-          type="text"
-          placeholder="Ej.: Campana, Buenos Aires"
-          value={origen}
-          onChange={(e) => setOrigen(e.target.value)}
-        />
-
-        <label htmlFor="destino">Destino</label>
-
-        <input
-          id="destino"
-          type="text"
-          placeholder="Ej.: Rosario, Santa Fe"
-          value={destino}
-          onChange={(e) => setDestino(e.target.value)}
-        />
-
-        <label htmlFor="vehiculo">Tipo de vehículo</label>
-
-        <select
-          id="vehiculo"
-          value={vehiculo}
-          onChange={(e) => setVehiculo(e.target.value)}
+    <main
+      style={{
+        minHeight: "100vh",
+        background: "#f1f5f9",
+        padding: "20px",
+        fontFamily:
+          "Arial, Helvetica, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: "700px",
+          margin: "0 auto",
+        }}
+      >
+        <div
+          style={{
+            background: "white",
+            borderRadius: "24px",
+            padding: "28px",
+            boxShadow:
+              "0 10px 30px rgba(0,0,0,0.08)",
+          }}
         >
-          <option>Camión</option>
-          <option>Camión con acoplado</option>
-          <option>Camión con semirremolque</option>
-          <option>Bitren</option>
-        </select>
+          <h1
+            style={{
+              margin: "0 0 10px",
+              fontSize: "36px",
+              color: "#172033",
+            }}
+          >
+            🚛 Camionero AR
+          </h1>
 
-        <button
-          type="button"
-          onClick={planificarRuta}
-          disabled={cargando}
-        >
-          {cargando ? "⏳ Calculando..." : "🗺️ Planificar ruta"}
-        </button>
+          <p
+            style={{
+              fontSize: "18px",
+              lineHeight: 1.6,
+              color: "#374151",
+              marginBottom: "25px",
+            }}
+          >
+            Planificador de rutas para transporte
+            pesado en Argentina.
+          </p>
 
-        {error && (
-          <div className="tarjeta" style={{ marginTop: "20px" }}>
-            <h3>⚠️ Atención</h3>
-            <p>{error}</p>
-          </div>
-        )}
+          <hr
+            style={{
+              border: 0,
+              borderTop:
+                "1px solid #e5e7eb",
+              marginBottom: "25px",
+            }}
+          />
 
-        {resultado && (
-          <div className="tarjeta" style={{ marginTop: "20px" }}>
-            <h3>📍 Resultado de la ruta</h3>
+          <h2
+            style={{
+              fontSize: "28px",
+              color: "#172033",
+              marginBottom: "25px",
+            }}
+          >
+            Planificar viaje
+          </h2>
 
-            <p>
-              <strong>Origen:</strong> {resultado.origen}
-            </p>
+          <label
+            htmlFor="origen"
+            style={{
+              display: "block",
+              fontWeight: "bold",
+              fontSize: "18px",
+              marginBottom: "8px",
+              color: "#172033",
+            }}
+          >
+            Origen
+          </label>
 
-            <p>
-              <strong>Destino:</strong> {resultado.destino}
-            </p>
+          <input
+            id="origen"
+            type="text"
+            placeholder="Ej.: Campana, Buenos Aires"
+            value={origen}
+            onChange={(e) =>
+              setOrigen(e.target.value)
+            }
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "16px",
+              borderRadius: "12px",
+              border:
+                "1px solid #cbd5e1",
+              fontSize: "17px",
+              marginBottom: "20px",
+            }}
+          />
 
-            <p>
-              <strong>Vehículo:</strong> {vehiculo}
-            </p>
+          <label
+            htmlFor="destino"
+            style={{
+              display: "block",
+              fontWeight: "bold",
+              fontSize: "18px",
+              marginBottom: "8px",
+              color: "#172033",
+            }}
+          >
+            Destino
+          </label>
 
-            <p>
-              <strong>Distancia:</strong> {resultado.distanciaKm} kilómetros
-            </p>
+          <input
+            id="destino"
+            type="text"
+            placeholder="Ej.: Rosario, Santa Fe"
+            value={destino}
+            onChange={(e) =>
+              setDestino(e.target.value)
+            }
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "16px",
+              borderRadius: "12px",
+              border:
+                "1px solid #cbd5e1",
+              fontSize: "17px",
+              marginBottom: "20px",
+            }}
+          />
 
-            <p>
-              <strong>Duración estimada:</strong>{" "}
-              {formatearDuracion(resultado.duracionMinutos)}
-            </p>
+          <label
+            htmlFor="vehiculo"
+            style={{
+              display: "block",
+              fontWeight: "bold",
+              fontSize: "18px",
+              marginBottom: "8px",
+              color: "#172033",
+            }}
+          >
+            Tipo de vehículo
+          </label>
 
-            <p style={{ fontSize: "13px", opacity: 0.7 }}>
-              La distancia y duración son estimaciones basadas en la ruta
-              disponible.
-            </p>
-          </div>
-        )}
+          <select
+            id="vehiculo"
+            value={vehiculo}
+            onChange={(e) =>
+              setVehiculo(e.target.value)
+            }
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "16px",
+              borderRadius: "12px",
+              border:
+                "1px solid #cbd5e1",
+              fontSize: "17px",
+              marginBottom: "25px",
+              background: "white",
+            }}
+          >
+            <option>Camión</option>
+            <option>Camión con acoplado</option>
+            <option>Camión con semirremolque</option>
+            <option>Bitren</option>
+          </select>
+
+          <button
+            onClick={planificarRuta}
+            disabled={cargando}
+            style={{
+              width: "100%",
+              padding: "18px",
+              border: "none",
+              borderRadius: "12px",
+              background:
+                cargando
+                  ? "#64748b"
+                  : "#30384d",
+              color: "white",
+              fontSize: "18px",
+              fontWeight: "bold",
+              cursor: cargando
+                ? "wait"
+                : "pointer",
+            }}
+          >
+            {cargando
+              ? "⏳ Calculando..."
+              : "🗺️ Planificar ruta"}
+          </button>
+
+          {error && (
+            <div
+              style={{
+                marginTop: "25px",
+                padding: "20px",
+                borderRadius: "18px",
+                background: "#fff7ed",
+                border:
+                  "1px solid #fed7aa",
+              }}
+            >
+              <h3
+                style={{
+                  marginTop: 0,
+                  color: "#9a3412",
+                }}
+              >
+                ⚠️ Atención
+              </h3>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  color: "#7c2d12",
+                  fontSize: "17px",
+                }}
+              >
+                {error}
+              </p>
+            </div>
+          )}
+
+          {resultado && (
+            <div
+              style={{
+                marginTop: "25px",
+                padding: "22px",
+                borderRadius: "18px",
+                background: "#f8fafc",
+                border:
+                  "1px solid #e2e8f0",
+              }}
+            >
+              <h3
+                style={{
+                  marginTop: 0,
+                  color: "#172033",
+                  fontSize: "22px",
+                }}
+              >
+                📍 Resultado de la ruta
+              </h3>
+
+              <p>
+                <strong>Origen:</strong>{" "}
+                {resultado.origen}
+              </p>
+
+              <p>
+                <strong>Destino:</strong>{" "}
+                {resultado.destino}
+              </p>
+
+              <p>
+                <strong>Vehículo:</strong>{" "}
+                {resultado.vehiculo}
+              </p>
+
+              <p>
+                <strong>Distancia:</strong>{" "}
+                {resultado.distanciaKm} kilómetros
+              </p>
+
+              <p>
+                <strong>
+                  Duración estimada:
+                </strong>{" "}
+                {formatearDuracion(
+                  resultado.duracionMinutos
+                )}
+              </p>
+
+              <div
+                style={{
+                  marginTop: "20px",
+                  padding: "15px",
+                  borderRadius: "12px",
+                  background: "#fff7ed",
+                  color: "#7c2d12",
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                }}
+              >
+                ⚠️ La distancia y duración son
+                estimaciones de la ruta vial
+                disponible. Esta versión todavía
+                no verifica restricciones legales
+                específicas para camiones, pesos,
+                alturas, puentes o circulación
+                de transporte pesado.
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </main>
   );
