@@ -2,14 +2,20 @@
 
 import { useState } from "react";
 
-type ResultadoRuta = {
-  distanciaKm: number;
-  duracionMin: number;
-};
-
 type Coordenadas = {
   lon: number;
   lat: number;
+};
+
+type GeometriaRuta = {
+  type: "LineString";
+  coordinates: [number, number][];
+};
+
+type ResultadoRuta = {
+  distanciaKm: number;
+  duracionMin: number;
+  geometria: GeometriaRuta;
 };
 
 type PerfilVehiculo = {
@@ -22,7 +28,10 @@ type PerfilVehiculo = {
   consumo: number;
 };
 
-type EstadoRestriccion = "COMPATIBLE" | "EXCEDE" | "NO_VERIFICADA";
+type EstadoRestriccion =
+  | "COMPATIBLE"
+  | "EXCEDE"
+  | "NO_VERIFICADA";
 
 type EvaluacionVehiculo = {
   estado: EstadoRestriccion;
@@ -42,7 +51,7 @@ const perfiles: Record<string, PerfilVehiculo> = {
 
   camionAcoplado: {
     nombre: "Camión con acoplado",
-    largo: 20.5,
+    largo: 20,
     ancho: 2.6,
     altura: 4.1,
     peso: 45,
@@ -160,11 +169,21 @@ export default function Home() {
     origenCoord: Coordenadas,
     destinoCoord: Coordenadas
   ): Promise<ResultadoRuta> {
+    /*
+      overview=full:
+      solicita la geometría completa de la ruta.
+
+      geometries=geojson:
+      devuelve la geometría en formato GeoJSON,
+      que después podremos utilizar para mapas
+      y para cruzarla con nuestra base de restricciones.
+    */
+
     const url =
       `https://router.project-osrm.org/route/v1/driving/` +
       `${origenCoord.lon},${origenCoord.lat};` +
       `${destinoCoord.lon},${destinoCoord.lat}` +
-      `?overview=false&steps=false`;
+      `?overview=full&geometries=geojson&steps=false`;
 
     const respuesta = await fetch(url);
 
@@ -188,9 +207,44 @@ export default function Home() {
 
     const ruta = datos.routes[0];
 
+    if (
+      !ruta.geometry ||
+      ruta.geometry.type !== "LineString" ||
+      !Array.isArray(ruta.geometry.coordinates) ||
+      ruta.geometry.coordinates.length < 2
+    ) {
+      throw new Error(
+        "La ruta fue calculada, pero no se recibió su geometría."
+      );
+    }
+
+    const coordenadasValidas: [number, number][] =
+      ruta.geometry.coordinates
+        .filter(
+          (punto: unknown): punto is [number, number] =>
+            Array.isArray(punto) &&
+            punto.length >= 2 &&
+            Number.isFinite(Number(punto[0])) &&
+            Number.isFinite(Number(punto[1]))
+        )
+        .map((punto) => [
+          Number(punto[0]),
+          Number(punto[1]),
+        ]);
+
+    if (coordenadasValidas.length < 2) {
+      throw new Error(
+        "La geometría recibida no contiene suficientes puntos válidos."
+      );
+    }
+
     return {
       distanciaKm: ruta.distance / 1000,
       duracionMin: ruta.duration / 60,
+      geometria: {
+        type: "LineString",
+        coordinates: coordenadasValidas,
+      },
     };
   }
 
@@ -199,16 +253,8 @@ export default function Home() {
 
     const observaciones: string[] = [];
 
-    let estado: EstadoRestriccion = "COMPATIBLE";
-
-    /*
-      Límites generales tomados del régimen nacional
-      vigente al momento de construir esta versión.
-
-      IMPORTANTE:
-      Esto NO reemplaza la evaluación específica
-      de cada tramo de la ruta.
-    */
+    let estado: EstadoRestriccion =
+      "COMPATIBLE";
 
     const limiteAncho = 2.6;
     const limiteAltura = 4.3;
@@ -290,15 +336,6 @@ export default function Home() {
       );
     }
 
-    /*
-      El peso total requiere una evaluación más detallada
-      según configuración de ejes, suspensión, distribución
-      de carga y normativa aplicable.
-
-      Por eso NO marcamos automáticamente el vehículo
-      como legal solamente por el peso total.
-    */
-
     if (perfil.peso > 45) {
       if (vehiculo !== "bitren") {
         estado = "EXCEDE";
@@ -316,12 +353,6 @@ export default function Home() {
         `Peso bruto configurado: ${perfil.peso} t.`
       );
     }
-
-    /*
-      Aunque las dimensiones generales sean compatibles,
-      todavía necesitamos conocer las restricciones concretas
-      de cada tramo de la ruta.
-    */
 
     if (estado === "COMPATIBLE") {
       estado = "NO_VERIFICADA";
@@ -416,24 +447,21 @@ export default function Home() {
   const costoEstimado =
     litrosEstimados * precioGasoil;
 
+  const cantidadPuntosRuta =
+    resultado?.geometria.coordinates.length ?? 0;
+
   function formatoNumero(numero: number) {
-    return new Intl.NumberFormat(
-      "es-AR",
-      {
-        maximumFractionDigits: 1,
-      }
-    ).format(numero);
+    return new Intl.NumberFormat("es-AR", {
+      maximumFractionDigits: 1,
+    }).format(numero);
   }
 
   function formatoDinero(numero: number) {
-    return new Intl.NumberFormat(
-      "es-AR",
-      {
-        style: "currency",
-        currency: "ARS",
-        maximumFractionDigits: 0,
-      }
-    ).format(numero);
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    }).format(numero);
   }
 
   function textoEstado(
@@ -806,6 +834,54 @@ export default function Home() {
               </p>
             </div>
 
+            <div
+              style={{
+                marginTop: 20,
+                padding: 16,
+                background: "#e0f2fe",
+                border:
+                  "1px solid #bae6fd",
+                borderRadius: 14,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 19,
+                  fontWeight: 800,
+                }}
+              >
+                🛣️ Geometría de la ruta
+              </div>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  lineHeight: 1.5,
+                }}
+              >
+                Recorrido completo capturado
+                correctamente.
+                <br />
+                Puntos de la ruta:{" "}
+                <strong>
+                  {cantidadPuntosRuta}
+                </strong>
+              </p>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  color: "#475569",
+                  fontSize: 14,
+                }}
+              >
+                Esta información queda preparada
+                para el futuro mapa y para cruzar
+                la ruta con las restricciones de
+                transporte pesado.
+              </p>
+            </div>
+
             <hr
               style={{
                 border: 0,
@@ -821,219 +897,4 @@ export default function Home() {
                 marginBottom: 20,
               }}
             >
-              ⛽ Estimación de combustible
-            </h2>
-
-            <div
-              style={{
-                fontSize: 18,
-                lineHeight: 1.6,
-              }}
-            >
-              <p>
-                <strong>
-                  Distancia ida y vuelta:
-                </strong>{" "}
-                {formatoNumero(
-                  distanciaIdaVuelta
-                )}{" "}
-                km
-              </p>
-
-              <p>
-                <strong>Consumo:</strong>{" "}
-                {formatoNumero(consumo)}{" "}
-                L/100 km
-              </p>
-
-              <p>
-                <strong>
-                  Litros estimados:
-                </strong>{" "}
-                {formatoNumero(
-                  litrosEstimados
-                )}{" "}
-                L
-              </p>
-
-              <p>
-                <strong>
-                  Precio gasoil:
-                </strong>{" "}
-                {formatoDinero(
-                  precioGasoil
-                )}{" "}
-                / L
-              </p>
-            </div>
-
-            <div
-              style={{
-                background: "white",
-                borderRadius: 16,
-                padding: "20px",
-                marginTop: 20,
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 22,
-                  fontWeight: 800,
-                }}
-              >
-                💰 Costo estimado:
-              </div>
-
-              <div
-                style={{
-                  fontSize: 32,
-                  fontWeight: 900,
-                  marginTop: 4,
-                }}
-              >
-                {formatoDinero(
-                  costoEstimado
-                )}
-              </div>
-            </div>
-
-            {evaluacion && (
-              <div
-                style={{
-                  marginTop: 22,
-                  background:
-                    colorEstado(
-                      evaluacion.estado
-                    ),
-                  borderRadius: 16,
-                  padding: 20,
-                }}
-              >
-                <h2
-                  style={{
-                    marginTop: 0,
-                    fontSize: 23,
-                  }}
-                >
-                  ⚖️ Evaluación del vehículo
-                </h2>
-
-                <div
-                  style={{
-                    fontSize: 22,
-                    fontWeight: 900,
-                    marginBottom: 16,
-                  }}
-                >
-                  {textoEstado(
-                    evaluacion.estado
-                  )}
-                </div>
-
-                <ul
-                  style={{
-                    margin: 0,
-                    paddingLeft: 22,
-                    lineHeight: 1.6,
-                  }}
-                >
-                  {evaluacion.observaciones.map(
-                    (observacion, index) => (
-                      <li key={index}>
-                        {observacion}
-                      </li>
-                    )
-                  )}
-                </ul>
-              </div>
-            )}
-
-            <div
-              style={{
-                marginTop: 20,
-                background: "#fffbea",
-                border:
-                  "1px solid #f5df86",
-                borderRadius: 16,
-                padding: 18,
-                color: "#7c4a03",
-                lineHeight: 1.55,
-              }}
-            >
-              <strong>
-                ⚠️ Importante
-              </strong>
-
-              <p
-                style={{
-                  marginBottom: 0,
-                }}
-              >
-                Esta versión calcula una ruta
-                vial mediante servicios de mapas
-                y realiza una primera evaluación
-                de las dimensiones generales del
-                vehículo.
-              </p>
-
-              <p>
-                Todavía no verifica las
-                restricciones específicas de cada
-                tramo: puentes, peso por eje,
-                horarios, corredores habilitados,
-                permisos, restricciones locales
-                o condiciones particulares de la
-                infraestructura.
-              </p>
-
-              <p
-                style={{
-                  marginBottom: 0,
-                  fontWeight: 700,
-                }}
-              >
-                Por eso “RUTA NO VERIFICADA” no
-                significa que la ruta esté
-                prohibida: significa que todavía
-                falta comprobarla contra nuestra
-                base de restricciones.
-              </p>
-            </div>
-          </section>
-        )}
-
-        <footer
-          style={{
-            textAlign: "center",
-            color: "#6b7280",
-            fontSize: 14,
-            paddingTop: 10,
-          }}
-        >
-          Camionero AR · Planificación de
-          transporte pesado en Argentina
-        </footer>
-      </div>
-    </main>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%",
-  boxSizing: "border-box",
-  padding: "14px",
-  borderRadius: 12,
-  border: "1px solid #cbd5e1",
-  fontSize: 16,
-  marginBottom: 16,
-  background: "white",
-  color: "#172033",
-};
-
-const gridStyle: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns:
-    "repeat(2, minmax(0, 1fr))",
-  gap: 12,
-  lineHeight: 1.5,
-};
+              ⛽ Estimació
