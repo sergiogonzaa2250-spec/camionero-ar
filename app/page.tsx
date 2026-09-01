@@ -897,4 +897,174 @@ export default function Home() {
                 marginBottom: 20,
               }}
             >
-              ⛽ Estimació
+              ⛽ Estimación de combustible
+            </h2>
+
+            <div
+              style={{
+                fontSize: 18,
+                lineHeight: 1.6,
+              }}
+            >
+              <p>
+                <strong>
+                  Distancia ida y vuelta:
+                </strong>{" "}
+                {formatoNumero(distanciaIdaVuelta)} km
+              </p>
+
+              <p>
+                <strong>Consumo:</strong>{" "}
+                {formatoNumero(consumo)} L/100 km
+              </p>
+
+              <p>
+                <strong>
+                  Litros estimados:
+                </strong>{" "}
+                {formatoNumero(litrosEstimados)} L
+              </p>
+
+              <p>
+                <strong>
+                  Precio gasoil:
+                </strong>{" "}
+                {formatoDinero(precioGasoil)} / L
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "white",
+                borderRadius: 16,
+                padding: 20,
+                marginTop: 20,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                }}
+              >
+                💰 Costo estimado:
+              </div>
+
+              <div
+                style={{
+                  fontSize: 32,
+                  fontWeight: 900,
+                  marginTop: 4,
+                }}
+              >
+                {formatoDinero(costoEstimado)}
+              </div>
+            </div>
+
+            {evaluacion && (
+              <div
+                style={{
+                  marginTop: 22,
+                  background: colorEstado(
+                    evaluacion.estado
+                  ),
+                  borderRadius: 16,
+                  padding: 20,
+                }}
+              >
+                <h2
+                  style={{
+                    marginTop: 0,
+                    fontSize: 23,
+                  }}
+                >
+                  ⚖️ Evaluación del vehículo
+                </h2>
+
+                <div
+                  style={{
+                    fontSize: 22,
+                    fontWeight: 900,
+                    marginBottom: 16,
+                  }}
+                >
+                  {textoEstado(evaluacion.estado)}
+                </div>
+
+                <ul
+                  style={{
+                    margin: 0,
+                    paddingLeft: 22,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {evaluacion.observaciones.map(
+                    (observacion, index) => (
+                      <li key={index}>
+                        {observacion}
+                      </li>
+                    )
+                  )}
+                </ul>
+              </div>
+            )}
+
+            <div
+              style={{
+                marginTop: 20,
+                background: "#fffbea",
+                border: "1px solid #f5df86",
+                borderRadius: 16,
+                padding: 18,
+                color: "#7c4a03",
+                lineHeight: 1.55,
+              }}
+            >
+              <strong>⚠️ Importante</strong>
+
+              <p>
+                Esta versión calcula una ruta vial
+                mediante servicios de mapas y
+                conserva la geometría completa del
+                recorrido.
+              </p>
+
+              <p>
+                Todavía no verifica las restricciones
+                específicas de cada tramo: puentes,
+                peso por eje, horarios, corredores
+                habilitados, permisos, restricciones
+                locales o condiciones particulares de
+                la infraestructura.
+              </p>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  fontWeight: 700,
+                }}
+              >
+                Por eso “RUTA NO VERIFICADA” no
+                significa que la ruta esté prohibida:
+                significa que todavía falta comprobarla
+                contra nuestra base de restricciones.
+              </p>
+            </div>
+          </section>
+        )}
+
+        <footer
+          style={{
+            textAlign: "center",
+            color: "#6b7280",
+            fontSize: 14,
+            paddingTop: 10,
+          }}
+        >
+          Camionero AR · Planificación de transporte
+          pesado en Argentina
+        </footer>
+      </div>
+    </main>
+  );
+                  }
