@@ -2,6 +2,20 @@
 
 import { useState } from "react";
 
+type Coordenadas = [number, number];
+
+type CaracteristicaPhoton = {
+  geometry?: {
+    coordinates?: Coordenadas;
+  };
+  properties?: {
+    name?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+  };
+};
+
 type ResultadoRuta = {
   origen: string;
   destino: string;
@@ -15,29 +29,87 @@ export default function Hogar() {
   const [destino, setDestino] = useState("");
   const [vehiculo, setVehiculo] = useState("Camión");
 
-  const [resultado, setResultado] = useState<ResultadoRuta | null>(null);
+  const [resultado, setResultado] =
+    useState<ResultadoRuta | null>(null);
+
   const [error, establecerError] = useState("");
   const [cargando, conjuntoCargando] = useState(false);
 
-  async function buscarLugar(lugar: string) {
+  async function buscarLugar(
+    lugar: string
+  ): Promise<CaracteristicaPhoton> {
+    const consulta = encodeURIComponent(
+      `${lugar.trim()}, Argentina`
+    );
+
     const url =
-      `https://photon.komoot.io/api/?q=${encodeURIComponent(lugar)}` +
+      `https://photon.komoot.io/api/?q=${consulta}` +
       `&limit=1&lang=es`;
 
-    const respuesta = await fetch(url);
+    let respuesta: Response;
 
-    if (!respuesta.ok) {
-      throw new Error("No se pudo consultar el servicio de mapas.");
+    try {
+      respuesta = await fetch(url, {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+        },
+        cache: "no-store",
+      });
+    } catch {
+      throw new Error(
+        "No se pudo conectar con el servicio de mapas. Revisá tu conexión a Internet e intentá nuevamente."
+      );
     }
 
-    const datos = await respuesta.json();
+    if (!respuesta.ok) {
+      throw new Error(
+        `El servicio de mapas respondió con error (${respuesta.status}). Intentá nuevamente.`
+      );
+    }
 
-    return datos.features?.[0];
+    let datos: {
+      features?: CaracteristicaPhoton[];
+    };
+
+    try {
+      datos = await respuesta.json();
+    } catch {
+      throw new Error(
+        "El servicio de mapas devolvió una respuesta inválida."
+      );
+    }
+
+    const lugarEncontrado = datos.features?.[0];
+
+    if (!lugarEncontrado) {
+      throw new Error(
+        `No se encontró "${lugar}". Probá escribiendo ciudad y provincia.`
+      );
+    }
+
+    const coordenadas =
+      lugarEncontrado.geometry?.coordinates;
+
+    if (
+      !coordenadas ||
+      coordenadas.length < 2 ||
+      !Number.isFinite(coordenadas[0]) ||
+      !Number.isFinite(coordenadas[1])
+    ) {
+      throw new Error(
+        `No se pudieron obtener las coordenadas de "${lugar}".`
+      );
+    }
+
+    return lugarEncontrado;
   }
 
   async function planificarRuta() {
     if (!origen.trim() || !destino.trim()) {
-      establecerError("Completá el origen y el destino.");
+      establecerError(
+        "Completá el origen y el destino."
+      );
       setResultado(null);
       return;
     }
@@ -47,20 +119,26 @@ export default function Hogar() {
     setResultado(null);
 
     try {
-      // Buscar origen
-      const origenCaracteristica = await buscarLugar(origen);
+      // ==============================
+      // BUSCAR ORIGEN
+      // ==============================
 
-      // Buscar destino
-      const destinoCaracteristica = await buscarLugar(destino);
+      const origenCaracteristica =
+        await buscarLugar(origen);
 
-      if (!origenCaracteristica || !destinoCaracteristica) {
-        throw new Error(
-          "No se pudo encontrar uno de los lugares. Probá agregando ciudad y provincia."
-        );
-      }
+      // ==============================
+      // BUSCAR DESTINO
+      // ==============================
 
-      // Photon entrega las coordenadas como:
+      const destinoCaracteristica =
+        await buscarLugar(destino);
+
+      // ==============================
+      // OBTENER COORDENADAS
+      // Photon devuelve:
       // [longitud, latitud]
+      // ==============================
+
       const origenCoordenadas =
         origenCaracteristica.geometry?.coordinates;
 
@@ -78,34 +156,101 @@ export default function Hogar() {
         );
       }
 
-      const [origenLon, origenLat] = origenCoordenadas;
-      const [destinoLon, destinoLat] = destinoCoordenadas;
+      const [origenLon, origenLat] =
+        origenCoordenadas;
 
-      // Solicitar ruta a OSRM
+      const [destinoLon, destinoLat] =
+        destinoCoordenadas;
+
+      // ==============================
+      // CALCULAR RUTA CON OSRM
+      // ==============================
+
       const rutaUrl =
         `https://router.project-osrm.org/route/v1/driving/` +
-        `${origenLon},${origenLat};${destinoLon},${destinoLat}` +
+        `${origenLon},${origenLat};` +
+        `${destinoLon},${destinoLat}` +
         `?overview=false&steps=false`;
 
-      const rutaRespuesta = await fetch(rutaUrl);
+      let rutaRespuesta: Response;
 
-      if (!rutaRespuesta.ok) {
-        throw new Error("El servicio de rutas no respondió.");
+      try {
+        rutaRespuesta = await fetch(rutaUrl, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+          },
+          cache: "no-store",
+        });
+      } catch {
+        throw new Error(
+          "No se pudo conectar con el servicio de rutas."
+        );
       }
 
-      const datosDeRuta = await rutaRespuesta.json();
+      if (!rutaRespuesta.ok) {
+        throw new Error(
+          `El servicio de rutas respondió con error (${rutaRespuesta.status}).`
+        );
+      }
+
+      let datosDeRuta: {
+        code?: string;
+        message?: string;
+        routes?: Array<{
+          distance: number;
+          duration: number;
+        }>;
+      };
+
+      try {
+        datosDeRuta = await rutaRespuesta.json();
+      } catch {
+        throw new Error(
+          "El servicio de rutas devolvió una respuesta inválida."
+        );
+      }
+
+      // ==============================
+      // VALIDAR RESPUESTA DE OSRM
+      // ==============================
+
+      if (datosDeRuta.code !== "Ok") {
+        throw new Error(
+          datosDeRuta.message ||
+            `OSRM no pudo calcular la ruta (${datosDeRuta.code || "error"}).`
+        );
+      }
 
       const ruta = datosDeRuta.routes?.[0];
 
       if (!ruta) {
-        throw new Error("No se encontró una ruta entre los lugares.");
+        throw new Error(
+          "No se encontró una ruta entre los lugares indicados."
+        );
       }
 
+      // ==============================
+      // DISTANCIA
+      // OSRM devuelve metros
+      // ==============================
+
       const distanciaKm =
-        Math.round((ruta.distance / 1000) * 10) / 10;
+        Math.round(
+          (ruta.distance / 1000) * 10
+        ) / 10;
+
+      // ==============================
+      // DURACIÓN
+      // OSRM devuelve segundos
+      // ==============================
 
       const duracionMinutos =
         Math.round(ruta.duration / 60);
+
+      // ==============================
+      // GUARDAR RESULTADO
+      // ==============================
 
       setResultado({
         origen,
@@ -129,9 +274,15 @@ export default function Hogar() {
     }
   }
 
-  function formatearDuracion(minutos: number) {
-    const horas = Math.floor(minutos / 60);
-    const minutosRestantes = minutos % 60;
+  function formatearDuracion(
+    minutos: number
+  ) {
+    const horas = Math.floor(
+      minutos / 60
+    );
+
+    const minutosRestantes =
+      minutos % 60;
 
     if (horas === 0) {
       return `${minutosRestantes} min`;
@@ -187,8 +338,8 @@ export default function Hogar() {
               marginBottom: "25px",
             }}
           >
-            Planificador de rutas para transporte
-            pesado en Argentina.
+            Planificador de rutas para
+            transporte pesado en Argentina.
           </p>
 
           <hr
@@ -209,6 +360,8 @@ export default function Hogar() {
           >
             Planificar viaje
           </h2>
+
+          {/* ORIGEN */}
 
           <label
             htmlFor="origen"
@@ -243,6 +396,8 @@ export default function Hogar() {
             }}
           />
 
+          {/* DESTINO */}
+
           <label
             htmlFor="destino"
             style={{
@@ -276,6 +431,8 @@ export default function Hogar() {
             }}
           />
 
+          {/* VEHÍCULO */}
+
           <label
             htmlFor="vehiculo"
             style={{
@@ -308,10 +465,16 @@ export default function Hogar() {
             }}
           >
             <option>Camión</option>
-            <option>Camión con acoplado</option>
-            <option>Camión con semirremolque</option>
+            <option>
+              Camión con acoplado
+            </option>
+            <option>
+              Camión con semirremolque
+            </option>
             <option>Bitren</option>
           </select>
+
+          {/* BOTÓN */}
 
           <button
             onClick={planificarRuta}
@@ -321,10 +484,9 @@ export default function Hogar() {
               padding: "18px",
               border: "none",
               borderRadius: "12px",
-              background:
-                cargando
-                  ? "#64748b"
-                  : "#30384d",
+              background: cargando
+                ? "#64748b"
+                : "#30384d",
               color: "white",
               fontSize: "18px",
               fontWeight: "bold",
@@ -337,6 +499,8 @@ export default function Hogar() {
               ? "⏳ Calculando..."
               : "🗺️ Planificar ruta"}
           </button>
+
+          {/* ERROR */}
 
           {error && (
             <div
@@ -363,12 +527,15 @@ export default function Hogar() {
                   marginBottom: 0,
                   color: "#7c2d12",
                   fontSize: "17px",
+                  lineHeight: 1.5,
                 }}
               >
                 {error}
               </p>
             </div>
           )}
+
+          {/* RESULTADO */}
 
           {resultado && (
             <div
@@ -431,13 +598,18 @@ export default function Hogar() {
                   lineHeight: 1.5,
                 }}
               >
-                ⚠️ La distancia y duración son
-                estimaciones de la ruta vial
-                disponible. Esta versión todavía
-                no verifica restricciones legales
-                específicas para camiones, pesos,
-                alturas, puentes o circulación
-                de transporte pesado.
+                ⚠️ La distancia y duración
+                son estimaciones de la ruta
+                vial disponible.
+
+                <br />
+                <br />
+
+                Esta versión todavía no
+                verifica restricciones legales
+                específicas para camiones,
+                pesos, alturas, puentes o
+                circulación de transporte pesado.
               </div>
             </div>
           )}
@@ -445,4 +617,4 @@ export default function Hogar() {
       </div>
     </main>
   );
-          }
+  }
