@@ -13,6 +13,7 @@ export default function Home() {
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
   const [vehiculo, setVehiculo] = useState("Camión");
+
   const [resultado, setResultado] = useState<ResultadoRuta | null>(null);
   const [error, setError] = useState("");
   const [cargando, setCargando] = useState(false);
@@ -28,13 +29,19 @@ export default function Home() {
     setError("");
     setResultado(null);
 
-    const origenGeo = await fetch(
-  `https://photon.komoot.io/api/?q=${encodeURIComponent(origen)}&limit=1&lang=es`
-);
+    try {
+      // Buscar las coordenadas del origen
+      const origenGeo = await fetch(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(
+          origen
+        )}&limit=1&lang=es`
+      );
 
-const destinoGeo = await fetch(
-  `https://photon.komoot.io/api/?q=${encodeURIComponent(destino)}&limit=1&lang=es`
-
+      // Buscar las coordenadas del destino
+      const destinoGeo = await fetch(
+        `https://photon.komoot.io/api/?q=${encodeURIComponent(
+          destino
+        )}&limit=1&lang=es`
       );
 
       if (!origenGeo.ok || !destinoGeo.ok) {
@@ -44,31 +51,38 @@ const destinoGeo = await fetch(
       const origenData = await origenGeo.json();
       const destinoData = await destinoGeo.json();
 
-      const OrigenCaracteristica = origenData.features?.[0];
-const DestinoCaracteristica = destinoData.features?.[0];
+      // Obtener el primer resultado encontrado
+      const origenFeature = origenData.features?.[0];
+      const destinoFeature = destinoData.features?.[0];
 
       if (!origenFeature || !destinoFeature) {
         throw new Error(
-          "No pude encontrar uno de los lugares. Probá agregando ciudad y provincia."
+          "No se pudo encontrar uno de los lugares. Probá agregando ciudad y provincia."
         );
       }
 
-      const [origenLon, origenLat] = origenFeature.geometry.coordinates;
-      const [destinoLon, destinoLat] = destinoFeature.geometry.coordinates;
+      // Coordenadas de Photon: [longitud, latitud]
+      const [origenLon, origenLat] =
+        origenFeature.geometry.coordinates;
 
-      const rutaResponse = await fetch(
+      const [destinoLon, destinoLat] =
+        destinoFeature.geometry.coordinates;
+
+      // Solicitar la ruta a OSRM
+      const rutaRespuesta = await fetch(
         `https://router.project-osrm.org/route/v1/driving/${origenLon},${origenLat};${destinoLon},${destinoLat}?overview=false`
       );
 
-      if (!rutaResponse.ok) {
+      if (!rutaRespuesta.ok) {
         throw new Error("El servicio de rutas no respondió.");
       }
 
-      const rutaData = await rutaResponse.json();
-      const ruta = rutaData.routes?.[0];
+      const datosDeRuta = await rutaRespuesta.json();
+
+      const ruta = datosDeRuta.routes?.[0];
 
       if (!ruta) {
-        throw new Error("No se encontró una ruta.");
+        throw new Error("No se encontró una ruta entre los lugares.");
       }
 
       setResultado({
@@ -77,25 +91,17 @@ const DestinoCaracteristica = destinoData.features?.[0];
         distanciaKm: Math.round((ruta.distance / 1000) * 10) / 10,
         duracionMinutos: Math.round(ruta.duration / 60),
       });
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : "Ocurrió un error al calcular la ruta."
-      );
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("Ocurrió un error al calcular la ruta.");
+      }
+
+      setResultado(null);
     } finally {
       setCargando(false);
     }
-  }
-
-  function abrirNavegacion() {
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(
-      origen
-    )}&destination=${encodeURIComponent(
-      destino
-    )}&travelmode=driving`;
-
-    window.open(url, "_blank");
   }
 
   return (
@@ -113,6 +119,7 @@ const DestinoCaracteristica = destinoData.features?.[0];
           <h2>Planificar viaje</h2>
 
           <label htmlFor="origen">Origen</label>
+
           <input
             id="origen"
             type="text"
@@ -122,6 +129,7 @@ const DestinoCaracteristica = destinoData.features?.[0];
           />
 
           <label htmlFor="destino">Destino</label>
+
           <input
             id="destino"
             type="text"
@@ -131,6 +139,7 @@ const DestinoCaracteristica = destinoData.features?.[0];
           />
 
           <label htmlFor="vehiculo">Tipo de vehículo</label>
+
           <select
             id="vehiculo"
             value={vehiculo}
@@ -142,7 +151,10 @@ const DestinoCaracteristica = destinoData.features?.[0];
             <option>Bitren</option>
           </select>
 
-          <button onClick={planificarRuta} disabled={cargando}>
+          <button
+            onClick={planificarRuta}
+            disabled={cargando}
+          >
             {cargando ? "⏳ Calculando..." : "🗺️ Planificar ruta"}
           </button>
 
@@ -155,7 +167,7 @@ const DestinoCaracteristica = destinoData.features?.[0];
 
           {resultado && (
             <div className="card" style={{ marginTop: "20px" }}>
-              <h2>📍 Ruta calculada</h2>
+              <h3>📍 Resultado de la ruta</h3>
 
               <p>
                 <strong>Origen:</strong> {resultado.origen}
@@ -170,22 +182,14 @@ const DestinoCaracteristica = destinoData.features?.[0];
               </p>
 
               <p>
-                <strong>Distancia:</strong> {resultado.distanciaKm} km
+                <strong>Distancia:</strong>{" "}
+                {resultado.distanciaKm} km
               </p>
 
               <p>
-                <strong>Tiempo estimado:</strong>{" "}
+                <strong>Duración estimada:</strong>{" "}
                 {Math.floor(resultado.duracionMinutos / 60)} h{" "}
                 {resultado.duracionMinutos % 60} min
-              </p>
-
-              <button onClick={abrirNavegacion}>
-                🧭 Abrir navegación
-              </button>
-
-              <p style={{ fontSize: "14px", marginTop: "15px" }}>
-                ⚠️ Esta primera versión calcula una ruta vial general.
-                Todavía no verifica restricciones específicas de camiones.
               </p>
             </div>
           )}
@@ -193,4 +197,4 @@ const DestinoCaracteristica = destinoData.features?.[0];
       </div>
     </main>
   );
-                }
+}
