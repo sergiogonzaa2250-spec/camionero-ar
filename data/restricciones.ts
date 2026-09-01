@@ -73,27 +73,26 @@ export type Restriccion = {
  * No se deben inventar límites ni restricciones.
  */
 
-export const restricciones: Restriccion[] = [];
 
-/*
- * Cuando incorporemos una restricción oficial,
- * tendrá esta estructura:
- *
- * {
- *   id: "puente-001",
- *   nombre: "Puente ...",
- *   tipo: "PUENTE",
- *   ruta: "RN XX",
- *   descripcion: "Descripción de la restricción.",
- *   limite: 30,
- *   unidad: "t",
- *   vehiculos: ["camionSemirremolque"],
- *   condiciones: [
- *     "Verificar configuración de ejes."
- *   ],
- *   estado: "VERIFICADA",
- *   fuente: "Vialidad Nacional",
- *   documento: "Documento oficial",
- *   fechaVerificacion: "2026-09-01"
- * }
- */
+export const restricciones: Restriccion[] = [
+  {
+    id: "puente-rn12-zarate-brazo-largo",
+    nombre: "Complejo Zárate - Brazo Largo",
+    tipo: "PUENTE",
+    ruta: "RN 12",
+    descripcion:
+      "Puente del Complejo Zárate - Brazo Largo. El listado oficial de puentes limitados indica consulta obligatoria a D.M.P. y V. para las condiciones de circulación.",
+    limite: 150,
+    unidad: "t",
+    condiciones: [
+      "Consultar D.M.P. y V.",
+      "Verificar límite por eje.",
+      "Verificar restricciones eventuales antes de circular.",
+      "No interpretar este registro como autorización automática."
+    ],
+    estado: "CONDICIONAL",
+    fuente: "Dirección Nacional de Vialidad",
+    documento: "Listado de Puentes Limitados - julio 2025",
+    fechaVerificacion: "2026-09-01"
+  }
+];
