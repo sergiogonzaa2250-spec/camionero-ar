@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 
+type Coordenadas = {
+  lon: number;
+  lat: number;
+};
+
 type ResultadoRuta = {
   origen: string;
   destino: string;
@@ -10,40 +15,55 @@ type ResultadoRuta = {
   duracionMinutos: number;
 };
 
-type Coordenadas = {
-  lon: number;
-  lat: number;
-};
-
 export default function CamioneroAR() {
-  const [origen, setOrigen] = useState("Campana, Buenos Aires, Argentina");
-  const [destino, setDestino] = useState("Rosario, Santa Fe, Argentina");
+  const [origen, setOrigen] = useState(
+    "Campana, Buenos Aires, Argentina"
+  );
+
+  const [destino, setDestino] = useState(
+    "Rosario, Santa Fe, Argentina"
+  );
+
   const [vehiculo, setVehiculo] = useState("Camión");
 
-  const [resultado, setResultado] = useState<ResultadoRuta | null>(null);
+  const [resultado, setResultado] =
+    useState<ResultadoRuta | null>(null);
+
   const [error, setError] = useState("");
+
   const [cargando, setCargando] = useState(false);
 
-  async function buscarLugar(lugar: string): Promise<Coordenadas> {
+  // --------------------------------------------------
+  // BUSCAR COORDENADAS
+  // --------------------------------------------------
+
+  async function buscarLugar(
+    lugar: string
+  ): Promise<Coordenadas> {
     const texto = lugar.trim();
 
     if (!texto) {
       throw new Error("Ingresá una ubicación.");
     }
 
-    const url =
-      "https://photon.komoot.io/api/?" +
-      new URLSearchParams({
-        q: texto,
-        limit: "1",
-        lang: "es",
-      }).toString();
+    const parametros = new URLSearchParams();
 
-    const respuesta = await fetch(url);
+    parametros.set("q", texto);
+    parametros.set("limit", "1");
+
+    const url =
+      `https://photon.komoot.io/api/?${parametros.toString()}`;
+
+    const respuesta = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
 
     if (!respuesta.ok) {
       throw new Error(
-        `El servicio de mapas respondió con error (${respuesta.status}).`
+        `No se pudo localizar "${texto}". El servicio de mapas respondió con error ${respuesta.status}.`
       );
     }
 
@@ -53,56 +73,66 @@ export default function CamioneroAR() {
 
     if (!caracteristica) {
       throw new Error(
-        `No se encontró "${texto}". Probá agregando ciudad y provincia.`
+        `No se encontró "${texto}". Probá escribir ciudad y provincia.`
       );
     }
 
-    const coordenadas = caracteristica?.geometry?.coordinates;
+    const coordenadas =
+      caracteristica?.geometry?.coordinates;
 
     if (
       !Array.isArray(coordenadas) ||
-      coordenadas.length < 2 ||
-      !Number.isFinite(Number(coordenadas[0])) ||
-      !Number.isFinite(Number(coordenadas[1]))
+      coordenadas.length < 2
     ) {
-      throw new Error(`No se pudieron obtener las coordenadas de "${texto}".`);
+      throw new Error(
+        `No se pudieron obtener las coordenadas de "${texto}".`
+      );
+    }
+
+    const lon = Number(coordenadas[0]);
+    const lat = Number(coordenadas[1]);
+
+    if (
+      !Number.isFinite(lon) ||
+      !Number.isFinite(lat)
+    ) {
+      throw new Error(
+        `Las coordenadas de "${texto}" no son válidas.`
+      );
     }
 
     return {
-      lon: Number(coordenadas[0]),
-      lat: Number(coordenadas[1]),
+      lon,
+      lat,
     };
   }
+
+  // --------------------------------------------------
+  // CALCULAR RUTA
+  // --------------------------------------------------
 
   async function calcularRuta(
     origenCoords: Coordenadas,
     destinoCoords: Coordenadas
   ) {
-    const origenValido =
-      Number.isFinite(origenCoords.lon) &&
-      Number.isFinite(origenCoords.lat);
-
-    const destinoValido =
-      Number.isFinite(destinoCoords.lon) &&
-      Number.isFinite(destinoCoords.lat);
-
-    if (!origenValido || !destinoValido) {
-      throw new Error("Las coordenadas obtenidas no son válidas.");
-    }
-
-    const coordenadasRuta =
+    const coordenadas =
       `${origenCoords.lon},${origenCoords.lat};` +
       `${destinoCoords.lon},${destinoCoords.lat}`;
 
     const url =
-      `https://router.project-osrm.org/route/v1/driving/${coordenadasRuta}` +
+      `https://router.project-osrm.org/route/v1/driving/${coordenadas}` +
       `?overview=false&steps=false`;
 
-    const respuesta = await fetch(url);
+    const respuesta = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+    });
 
     if (!respuesta.ok) {
       throw new Error(
-        `El servicio de rutas respondió con error (${respuesta.status}).`
+        `El servicio de rutas respondió con error ${respuesta.status}.`
       );
     }
 
@@ -110,69 +140,114 @@ export default function CamioneroAR() {
 
     if (datos?.code !== "Ok") {
       throw new Error(
-        datos?.message || "El servicio de rutas no encontró un recorrido."
+        datos?.message ||
+          "El servicio de rutas no pudo calcular el recorrido."
       );
     }
 
     const ruta = datos?.routes?.[0];
 
     if (!ruta) {
-      throw new Error("No se encontró una ruta entre los lugares.");
+      throw new Error(
+        "No se encontró una ruta entre el origen y el destino."
+      );
     }
 
+    const distancia =
+      Number(ruta.distance);
+
+    const duracion =
+      Number(ruta.duration);
+
     if (
-      !Number.isFinite(Number(ruta.distance)) ||
-      !Number.isFinite(Number(ruta.duration))
+      !Number.isFinite(distancia) ||
+      !Number.isFinite(duracion)
     ) {
-      throw new Error("La ruta recibida no contiene distancia o duración válidas.");
+      throw new Error(
+        "La respuesta de rutas no contiene datos válidos."
+      );
     }
 
     return {
-      distanciaKm: Math.round((Number(ruta.distance) / 1000) * 10) / 10,
-      duracionMinutos: Math.round(Number(ruta.duration) / 60),
+      distanciaKm:
+        Math.round((distancia / 1000) * 10) / 10,
+
+      duracionMinutos:
+        Math.round(duracion / 60),
     };
   }
 
+  // --------------------------------------------------
+  // PLANIFICAR
+  // --------------------------------------------------
+
   async function planificarRuta() {
-    if (!origen.trim() || !destino.trim()) {
-      setError("Completá el origen y el destino.");
+    if (
+      !origen.trim() ||
+      !destino.trim()
+    ) {
+      setError(
+        "Completá el origen y el destino."
+      );
+
       setResultado(null);
+
       return;
     }
 
     setCargando(true);
+
     setError("");
+
     setResultado(null);
 
     try {
-      const [origenCoords, destinoCoords] = await Promise.all([
-        buscarLugar(origen),
-        buscarLugar(destino),
-      ]);
+      const origenCoords =
+        await buscarLugar(origen);
 
-      const ruta = await calcularRuta(origenCoords, destinoCoords);
+      const destinoCoords =
+        await buscarLugar(destino);
+
+      const ruta =
+        await calcularRuta(
+          origenCoords,
+          destinoCoords
+        );
 
       setResultado({
-        origen,
-        destino,
+        origen: origen.trim(),
+        destino: destino.trim(),
         vehiculo,
-        distanciaKm: ruta.distanciaKm,
-        duracionMinutos: ruta.duracionMinutos,
+        distanciaKm:
+          ruta.distanciaKm,
+        duracionMinutos:
+          ruta.duracionMinutos,
       });
     } catch (e) {
       if (e instanceof Error) {
         setError(e.message);
       } else {
-        setError("Ocurrió un error al calcular la ruta.");
+        setError(
+          "Ocurrió un error inesperado al calcular la ruta."
+        );
       }
     } finally {
       setCargando(false);
     }
   }
 
-  function formatoDuracion(minutos: number) {
-    const horas = Math.floor(minutos / 60);
-    const minutosRestantes = minutos % 60;
+  // --------------------------------------------------
+  // FORMATO DE DURACIÓN
+  // --------------------------------------------------
+
+  function formatoDuracion(
+    minutos: number
+  ) {
+    const horas =
+      Math.floor(minutos / 60);
+
+    const minutosRestantes =
+      minutos % 60;
 
     if (horas === 0) {
       return `${minutosRestantes} min`;
@@ -185,13 +260,18 @@ export default function CamioneroAR() {
     return `${horas} h ${minutosRestantes} min`;
   }
 
+  // --------------------------------------------------
+  // INTERFAZ
+  // --------------------------------------------------
+
   return (
     <main
       style={{
         minHeight: "100vh",
         background: "#f1f5f9",
         padding: "20px",
-        fontFamily: "Arial, Helvetica, sans-serif",
+        fontFamily:
+          "Arial, Helvetica, sans-serif",
       }}
     >
       <div
@@ -201,7 +281,8 @@ export default function CamioneroAR() {
           background: "#ffffff",
           borderRadius: "24px",
           padding: "28px",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+          boxShadow:
+            "0 10px 30px rgba(0,0,0,0.08)",
         }}
       >
         <h1
@@ -222,13 +303,15 @@ export default function CamioneroAR() {
             marginBottom: "25px",
           }}
         >
-          Planificador de rutas para transporte pesado en Argentina.
+          Planificador de rutas para transporte
+          pesado en Argentina.
         </p>
 
         <hr
           style={{
             border: 0,
-            borderTop: "1px solid #e5e7eb",
+            borderTop:
+              "1px solid #e5e7eb",
             marginBottom: "25px",
           }}
         />
@@ -261,13 +344,16 @@ export default function CamioneroAR() {
           type="text"
           placeholder="Ej.: Campana, Buenos Aires"
           value={origen}
-          onChange={(e) => setOrigen(e.target.value)}
+          onChange={(e) =>
+            setOrigen(e.target.value)
+          }
           style={{
             width: "100%",
             boxSizing: "border-box",
             padding: "16px",
             borderRadius: "12px",
-            border: "1px solid #cbd5e1",
+            border:
+              "1px solid #cbd5e1",
             fontSize: "17px",
             marginBottom: "20px",
           }}
@@ -291,13 +377,16 @@ export default function CamioneroAR() {
           type="text"
           placeholder="Ej.: Rosario, Santa Fe"
           value={destino}
-          onChange={(e) => setDestino(e.target.value)}
+          onChange={(e) =>
+            setDestino(e.target.value)
+          }
           style={{
             width: "100%",
             boxSizing: "border-box",
             padding: "16px",
             borderRadius: "12px",
-            border: "1px solid #cbd5e1",
+            border:
+              "1px solid #cbd5e1",
             fontSize: "17px",
             marginBottom: "20px",
           }}
@@ -319,22 +408,36 @@ export default function CamioneroAR() {
         <select
           id="vehiculo"
           value={vehiculo}
-          onChange={(e) => setVehiculo(e.target.value)}
+          onChange={(e) =>
+            setVehiculo(e.target.value)
+          }
           style={{
             width: "100%",
             boxSizing: "border-box",
             padding: "16px",
             borderRadius: "12px",
-            border: "1px solid #cbd5e1",
+            border:
+              "1px solid #cbd5e1",
             fontSize: "17px",
             marginBottom: "25px",
             background: "#ffffff",
           }}
         >
-          <option>Camión</option>
-          <option>Camión con acoplado</option>
-          <option>Camión con semirremolque</option>
-          <option>Bitren</option>
+          <option>
+            Camión
+          </option>
+
+          <option>
+            Camión con acoplado
+          </option>
+
+          <option>
+            Camión con semirremolque
+          </option>
+
+          <option>
+            Bitren
+          </option>
         </select>
 
         <button
@@ -345,14 +448,22 @@ export default function CamioneroAR() {
             padding: "18px",
             border: "none",
             borderRadius: "12px",
-            background: cargando ? "#64748b" : "#30384d",
+            background:
+              cargando
+                ? "#64748b"
+                : "#30384d",
             color: "#ffffff",
             fontSize: "18px",
             fontWeight: "bold",
-            cursor: cargando ? "wait" : "pointer",
+            cursor:
+              cargando
+                ? "wait"
+                : "pointer",
           }}
         >
-          {cargando ? "⏳ Calculando..." : "🗺️ Planificar ruta"}
+          {cargando
+            ? "⏳ Calculando..."
+            : "🗺️ Planificar ruta"}
         </button>
 
         {error && (
@@ -362,7 +473,8 @@ export default function CamioneroAR() {
               padding: "20px",
               borderRadius: "18px",
               background: "#fff7ed",
-              border: "1px solid #fed7aa",
+              border:
+                "1px solid #fed7aa",
             }}
           >
             <h3
@@ -395,7 +507,8 @@ export default function CamioneroAR() {
               padding: "22px",
               borderRadius: "18px",
               background: "#f8fafc",
-              border: "1px solid #e2e8f0",
+              border:
+                "1px solid #e2e8f0",
             }}
           >
             <h3
@@ -409,24 +522,40 @@ export default function CamioneroAR() {
             </h3>
 
             <p>
-              <strong>Origen:</strong> {resultado.origen}
+              <strong>
+                Origen:
+              </strong>{" "}
+              {resultado.origen}
             </p>
 
             <p>
-              <strong>Destino:</strong> {resultado.destino}
+              <strong>
+                Destino:
+              </strong>{" "}
+              {resultado.destino}
             </p>
 
             <p>
-              <strong>Vehículo:</strong> {resultado.vehiculo}
+              <strong>
+                Vehículo:
+              </strong>{" "}
+              {resultado.vehiculo}
             </p>
 
             <p>
-              <strong>Distancia:</strong> {resultado.distanciaKm} kilómetros
+              <strong>
+                Distancia:
+              </strong>{" "}
+              {resultado.distanciaKm} km
             </p>
 
             <p>
-              <strong>Duración estimada:</strong>{" "}
-              {formatoDuracion(resultado.duracionMinutos)}
+              <strong>
+                Duración estimada:
+              </strong>{" "}
+              {formatoDuracion(
+                resultado.duracionMinutos
+              )}
             </p>
 
             <div
@@ -440,14 +569,17 @@ export default function CamioneroAR() {
                 lineHeight: 1.5,
               }}
             >
-              ⚠️ La distancia y duración son estimaciones de la ruta vial
-              disponible. Esta versión todavía no verifica restricciones
-              específicas para vehículos pesados, pesos máximos, alturas de
-              puentes, peajes, tránsito ni restricciones legales.
+              ⚠️ La distancia y duración son
+              estimaciones de la ruta vial.
+              Esta versión todavía no verifica
+              restricciones específicas para
+              vehículos pesados, pesos máximos,
+              alturas de puentes, peajes,
+              tránsito ni restricciones legales.
             </div>
           </div>
         )}
       </div>
     </main>
   );
-}
+      }
