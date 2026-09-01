@@ -9,66 +9,82 @@ type ResultadoRuta = {
   duracionMinutos: number;
 };
 
-export default function Home() {
+type Lugar = {
+  lat: string;
+  lon: string;
+  display_name: string;
+};
+
+export default function Hogar() {
   const [origen, setOrigen] = useState("");
   const [destino, setDestino] = useState("");
   const [vehiculo, setVehiculo] = useState("Camión");
 
   const [resultado, setResultado] = useState<ResultadoRuta | null>(null);
-  const [error, setError] = useState("");
-  const [cargando, setCargando] = useState(false);
+  const [error, establecerError] = useState("");
+  const [cargando, conjuntoCargando] = useState(false);
+
+  async function buscarLugar(texto: string): Promise<Lugar | null> {
+    const respuesta = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&countrycodes=ar&q=${encodeURIComponent(
+        texto
+      )}`,
+      {
+        headers: {
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (!respuesta.ok) {
+      throw new Error("No se pudo consultar el servicio de mapas.");
+    }
+
+    const datos: Lugar[] = await respuesta.json();
+
+    if (!datos || datos.length === 0) {
+      return null;
+    }
+
+    return datos[0];
+  }
 
   async function planificarRuta() {
     if (!origen.trim() || !destino.trim()) {
-      setError("Completá el origen y el destino.");
+      establecerError("Completá el origen y el destino.");
       setResultado(null);
       return;
     }
 
-    setCargando(true);
-    setError("");
+    conjuntoCargando(true);
+    establecerError("");
     setResultado(null);
 
     try {
-      // Buscar las coordenadas del origen
-      const origenGeo = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          origen
-        )}&limit=1&lang=es`
-      );
+      const origenLugar = await buscarLugar(origen);
+      const destinoLugar = await buscarLugar(destino);
 
-      // Buscar las coordenadas del destino
-      const destinoGeo = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          destino
-        )}&limit=1&lang=es`
-      );
-
-      if (!origenGeo.ok || !destinoGeo.ok) {
-        throw new Error("No se pudo localizar el lugar.");
-      }
-
-      const origenData = await origenGeo.json();
-      const destinoData = await destinoGeo.json();
-
-      // Obtener el primer resultado encontrado
-      const origenFeature = origenData.features?.[0];
-      const destinoFeature = destinoData.features?.[0];
-
-      if (!origenFeature || !destinoFeature) {
+      if (!origenLugar || !destinoLugar) {
         throw new Error(
-          "No se pudo encontrar uno de los lugares. Probá agregando ciudad y provincia."
+          "No se pudo localizar uno de los lugares. Probá agregando ciudad y provincia."
         );
       }
 
-      // Coordenadas de Photon: [longitud, latitud]
-      const [origenLon, origenLat] =
-        origenFeature.geometry.coordinates;
+      const origenLon = Number(origenLugar.lon);
+      const origenLat = Number(origenLugar.lat);
 
-      const [destinoLon, destinoLat] =
-        destinoFeature.geometry.coordinates;
+      const destinoLon = Number(destinoLugar.lon);
+      const destinoLat = Number(destinoLugar.lat);
 
-      // Solicitar la ruta a OSRM
+      if (
+        !Number.isFinite(origenLon) ||
+        !Number.isFinite(origenLat) ||
+        !Number.isFinite(destinoLon) ||
+        !Number.isFinite(destinoLat)
+      ) {
+        throw new Error("Las coordenadas obtenidas no son válidas.");
+      }
+
       const rutaRespuesta = await fetch(
         `https://router.project-osrm.org/route/v1/driving/${origenLon},${origenLat};${destinoLon},${destinoLat}?overview=false`
       );
@@ -79,122 +95,139 @@ export default function Home() {
 
       const datosDeRuta = await rutaRespuesta.json();
 
-      const ruta = datosDeRuta.routes?.[0];
+      const ruta = datosDeRuta?.routes?.[0];
 
       if (!ruta) {
         throw new Error("No se encontró una ruta entre los lugares.");
       }
 
       setResultado({
-        origen,
-        destino,
+        origen: origenLugar.display_name,
+        destino: destinoLugar.display_name,
         distanciaKm: Math.round((ruta.distance / 1000) * 10) / 10,
         duracionMinutos: Math.round(ruta.duration / 60),
       });
     } catch (err) {
       if (err instanceof Error) {
-        setError(err.message);
+        establecerError(err.message);
       } else {
-        setError("Ocurrió un error al calcular la ruta.");
+        establecerError("Ocurrió un error al calcular la ruta.");
       }
 
       setResultado(null);
     } finally {
-      setCargando(false);
+      conjuntoCargando(false);
     }
   }
 
+  function formatearDuracion(minutos: number) {
+    const horas = Math.floor(minutos / 60);
+    const minutosRestantes = minutos % 60;
+
+    if (horas === 0) {
+      return `${minutosRestantes} min`;
+    }
+
+    if (minutosRestantes === 0) {
+      return `${horas} h`;
+    }
+
+    return `${horas} h ${minutosRestantes} min`;
+  }
+
   return (
-    <main>
-      <div className="container">
-        <div className="card">
-          <h1>🚛 Camionero AR</h1>
+    <main className="recipiente">
+      <div className="tarjeta">
+        <h1>🚚 Camionero AR</h1>
 
-          <p>
-            Planificador de rutas para transporte pesado en Argentina.
-          </p>
+        <p>
+          Planificador de rutas para transporte pesado en Argentina.
+        </p>
 
-          <hr />
+        <hr />
 
-          <h2>Planificar viaje</h2>
+        <h2>Planificar viaje</h2>
 
-          <label htmlFor="origen">Origen</label>
+        <label htmlFor="origen">Origen</label>
 
-          <input
-            id="origen"
-            type="text"
-            placeholder="Ej.: Campana, Buenos Aires"
-            value={origen}
-            onChange={(e) => setOrigen(e.target.value)}
-          />
+        <input
+          id="origen"
+          type="text"
+          placeholder="Ej.: Campana, Buenos Aires"
+          value={origen}
+          onChange={(e) => setOrigen(e.target.value)}
+        />
 
-          <label htmlFor="destino">Destino</label>
+        <label htmlFor="destino">Destino</label>
 
-          <input
-            id="destino"
-            type="text"
-            placeholder="Ej.: Rosario, Santa Fe"
-            value={destino}
-            onChange={(e) => setDestino(e.target.value)}
-          />
+        <input
+          id="destino"
+          type="text"
+          placeholder="Ej.: Rosario, Santa Fe"
+          value={destino}
+          onChange={(e) => setDestino(e.target.value)}
+        />
 
-          <label htmlFor="vehiculo">Tipo de vehículo</label>
+        <label htmlFor="vehiculo">Tipo de vehículo</label>
 
-          <select
-            id="vehiculo"
-            value={vehiculo}
-            onChange={(e) => setVehiculo(e.target.value)}
-          >
-            <option>Camión</option>
-            <option>Camión con acoplado</option>
-            <option>Camión con semirremolque</option>
-            <option>Bitren</option>
-          </select>
+        <select
+          id="vehiculo"
+          value={vehiculo}
+          onChange={(e) => setVehiculo(e.target.value)}
+        >
+          <option>Camión</option>
+          <option>Camión con acoplado</option>
+          <option>Camión con semirremolque</option>
+          <option>Bitren</option>
+        </select>
 
-          <button
-            onClick={planificarRuta}
-            disabled={cargando}
-          >
-            {cargando ? "⏳ Calculando..." : "🗺️ Planificar ruta"}
-          </button>
+        <button
+          type="button"
+          onClick={planificarRuta}
+          disabled={cargando}
+        >
+          {cargando ? "⏳ Calculando..." : "🗺️ Planificar ruta"}
+        </button>
 
-          {error && (
-            <div className="card" style={{ marginTop: "20px" }}>
-              <strong>⚠️ Atención</strong>
-              <p>{error}</p>
-            </div>
-          )}
+        {error && (
+          <div className="tarjeta" style={{ marginTop: "20px" }}>
+            <h3>⚠️ Atención</h3>
+            <p>{error}</p>
+          </div>
+        )}
 
-          {resultado && (
-            <div className="card" style={{ marginTop: "20px" }}>
-              <h3>📍 Resultado de la ruta</h3>
+        {resultado && (
+          <div className="tarjeta" style={{ marginTop: "20px" }}>
+            <h3>📍 Resultado de la ruta</h3>
 
-              <p>
-                <strong>Origen:</strong> {resultado.origen}
-              </p>
+            <p>
+              <strong>Origen:</strong> {resultado.origen}
+            </p>
 
-              <p>
-                <strong>Destino:</strong> {resultado.destino}
-              </p>
+            <p>
+              <strong>Destino:</strong> {resultado.destino}
+            </p>
 
-              <p>
-                <strong>Vehículo:</strong> {vehiculo}
-              </p>
+            <p>
+              <strong>Vehículo:</strong> {vehiculo}
+            </p>
 
-              <p>
-                <strong>Distancia:</strong>{" "}
-                {resultado.distanciaKm} km
-              </p>
+            <p>
+              <strong>Distancia:</strong> {resultado.distanciaKm} kilómetros
+            </p>
 
-              <p>
-                <strong>Duración estimada:</strong>{" "}
-                {Math.floor(resultado.duracionMinutos / 60)} h{" "}
-                {resultado.duracionMinutos % 60} min
-              </p>
-            </div>
-          )}
-        </div>
+            <p>
+              <strong>Duración estimada:</strong>{" "}
+              {formatearDuracion(resultado.duracionMinutos)}
+            </p>
+
+            <p style={{ fontSize: "13px", opacity: 0.7 }}>
+              La distancia y duración son estimaciones basadas en la ruta
+              disponible.
+            </p>
+          </div>
+        )}
       </div>
     </main>
   );
-}
+          }
