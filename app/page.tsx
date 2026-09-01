@@ -2,6 +2,14 @@
 
 import { useState } from "react";
 
+type ResultadoRuta = {
+  origen: string;
+  destino: string;
+  vehiculo: string;
+  distanciaKm: number;
+  duracionMinutos: number;
+};
+
 type Coordenadas = {
   lon: number;
   lat: number;
@@ -13,15 +21,7 @@ type PerfilVehiculo = {
   altura: string;
   peso: string;
   ejes: string;
-  consumoBase: number;
-};
-
-type ResultadoRuta = {
-  origen: string;
-  destino: string;
-  vehiculo: string;
-  distanciaKm: number;
-  duracionMinutos: number;
+  consumo: number;
 };
 
 const perfiles: Record<string, PerfilVehiculo> = {
@@ -31,16 +31,16 @@ const perfiles: Record<string, PerfilVehiculo> = {
     altura: "4.1 m",
     peso: "30 t",
     ejes: "3",
-    consumoBase: 28,
+    consumo: 28,
   },
 
   "Camión con acoplado": {
-    largo: "20.5 m",
+    largo: "20 m",
     ancho: "2.6 m",
     altura: "4.1 m",
     peso: "45 t",
     ejes: "6",
-    consumoBase: 35,
+    consumo: 32,
   },
 
   "Camión con semirremolque": {
@@ -49,16 +49,16 @@ const perfiles: Record<string, PerfilVehiculo> = {
     altura: "4.1 m",
     peso: "45 t",
     ejes: "5",
-    consumoBase: 32,
+    consumo: 32,
   },
 
   Bitren: {
-    largo: "25.5 m",
+    largo: "30 m",
     ancho: "2.6 m",
     altura: "4.3 m",
     peso: "75 t",
     ejes: "9",
-    consumoBase: 40,
+    consumo: 35,
   },
 };
 
@@ -71,16 +71,13 @@ export default function CamioneroAR() {
     "Rosario, Santa Fe, Argentina"
   );
 
-  const [vehiculo, setVehiculo] = useState("Camión");
-
-  const [consumo, setConsumo] = useState(
-    String(perfiles["Camión"].consumoBase)
+  const [vehiculo, setVehiculo] = useState(
+    "Camión con semirremolque"
   );
 
-  const [precioCombustible, setPrecioCombustible] =
-    useState("1500");
+  const [consumo, setConsumo] = useState(32);
 
-  const [idaVuelta, setIdaVuelta] = useState(false);
+  const [precioGasoil, setPrecioGasoil] = useState(1500);
 
   const [resultado, setResultado] =
     useState<ResultadoRuta | null>(null);
@@ -95,7 +92,7 @@ export default function CamioneroAR() {
     const perfil = perfiles[nuevoVehiculo];
 
     if (perfil) {
-      setConsumo(String(perfil.consumoBase));
+      setConsumo(perfil.consumo);
     }
   }
 
@@ -108,83 +105,58 @@ export default function CamioneroAR() {
       throw new Error("Ingresá una ubicación.");
     }
 
+    const url =
+      "https://photon.komoot.io/api/?" +
+      new URLSearchParams({
+        q: texto,
+        limit: "1",
+        lang: "es",
+      }).toString();
+
+    let respuesta: Response;
+
     try {
-      const photonUrl =
-        "https://photon.komoot.io/api/?" +
-        new URLSearchParams({
-          q: texto,
-          limit: "1",
-          lang: "es",
-        }).toString();
-
-      const respuesta = await fetch(photonUrl);
-
-      if (respuesta.ok) {
-        const datos = await respuesta.json();
-
-        const feature = datos?.features?.[0];
-
-        const coordenadas =
-          feature?.geometry?.coordinates;
-
-        if (
-          Array.isArray(coordenadas) &&
-          coordenadas.length >= 2 &&
-          Number.isFinite(Number(coordenadas[0])) &&
-          Number.isFinite(Number(coordenadas[1]))
-        ) {
-          return {
-            lon: Number(coordenadas[0]),
-            lat: Number(coordenadas[1]),
-          };
-        }
-      }
+      respuesta = await fetch(url);
     } catch {
-      // Intentamos con Nominatim.
-    }
-
-    try {
-      const nominatimUrl =
-        "https://nominatim.openstreetmap.org/search?" +
-        new URLSearchParams({
-          q: texto,
-          format: "jsonv2",
-          limit: "1",
-          countrycodes: "ar",
-          "accept-language": "es",
-        }).toString();
-
-      const respuesta = await fetch(
-        nominatimUrl
+      throw new Error(
+        "No se pudo conectar con el servicio de mapas."
       );
-
-      if (respuesta.ok) {
-        const datos = await respuesta.json();
-
-        const lugarEncontrado = datos?.[0];
-
-        if (
-          lugarEncontrado &&
-          Number.isFinite(
-            Number(lugarEncontrado.lon)
-          ) &&
-          Number.isFinite(
-            Number(lugarEncontrado.lat)
-          )
-        ) {
-          return {
-            lon: Number(lugarEncontrado.lon),
-            lat: Number(lugarEncontrado.lat),
-          };
-        }
-      }
-    } catch {
-      // Se informa el error abajo.
     }
 
-    throw new Error(
-      `No se encontró "${texto}". Probá escribiendo ciudad y provincia.`
-    );
+    if (!respuesta.ok) {
+      throw new Error(
+        `El servicio de mapas respondió con error (${respuesta.status}).`
+      );
+    }
+
+    const datos = await respuesta.json();
+
+    const caracteristica = datos?.features?.[0];
+
+    if (!caracteristica) {
+      throw new Error(
+        `No se encontró "${texto}". Probá agregando ciudad y provincia.`
+      );
+    }
+
+    const coordenadas =
+      caracteristica?.geometry?.coordinates;
+
+    if (
+      !Array.isArray(coordenadas) ||
+      coordenadas.length < 2 ||
+      !Number.isFinite(Number(coordenadas[0])) ||
+      !Number.isFinite(Number(coordenadas[1]))
+    ) {
+      throw new Error(
+        `No se pudieron obtener las coordenadas de "${texto}".`
+      );
+    }
+
+    return {
+      lon: Number(coordenadas[0]),
+      lat: Number(coordenadas[1]),
+    };
   }
 
   async function calcularRuta(
@@ -202,15 +174,23 @@ export default function CamioneroAR() {
       );
     }
 
-    const coordenadas =
+    const coordenadasRuta =
       `${origenCoords.lon},${origenCoords.lat};` +
       `${destinoCoords.lon},${destinoCoords.lat}`;
 
     const url =
-      `https://router.project-osrm.org/route/v1/driving/${coordenadas}` +
-      "?overview=false&steps=false";
+      `https://router.project-osrm.org/route/v1/driving/${coordenadasRuta}` +
+      `?overview=false&steps=false`;
 
-    const respuesta = await fetch(url);
+    let respuesta: Response;
+
+    try {
+      respuesta = await fetch(url);
+    } catch {
+      throw new Error(
+        "No se pudo conectar con el servicio de rutas."
+      );
+    }
 
     if (!respuesta.ok) {
       throw new Error(
@@ -240,7 +220,7 @@ export default function CamioneroAR() {
       !Number.isFinite(Number(ruta.duration))
     ) {
       throw new Error(
-        "La ruta recibida no contiene datos válidos."
+        "La ruta recibida no contiene distancia o duración válidas."
       );
     }
 
@@ -251,9 +231,7 @@ export default function CamioneroAR() {
         ) / 10,
 
       duracionMinutos:
-        Math.round(
-          Number(ruta.duration) / 60
-        ),
+        Math.round(Number(ruta.duration) / 60),
     };
   }
 
@@ -270,31 +248,20 @@ export default function CamioneroAR() {
       return;
     }
 
-    const consumoNumero = Number(
-      consumo.replace(",", ".")
-    );
-
-    const precioNumero = Number(
-      precioCombustible.replace(",", ".")
-    );
-
-    if (
-      !Number.isFinite(consumoNumero) ||
-      consumoNumero <= 0
-    ) {
+    if (!Number.isFinite(consumo) || consumo <= 0) {
       setError(
-        "Ingresá un consumo válido en litros cada 100 km."
+        "El consumo debe ser mayor que 0 L/100 km."
       );
       setResultado(null);
       return;
     }
 
     if (
-      !Number.isFinite(precioNumero) ||
-      precioNumero <= 0
+      !Number.isFinite(precioGasoil) ||
+      precioGasoil <= 0
     ) {
       setError(
-        "Ingresá un precio de combustible válido."
+        "Ingresá un precio de gasoil válido."
       );
       setResultado(null);
       return;
@@ -305,13 +272,11 @@ export default function CamioneroAR() {
     setResultado(null);
 
     try {
-      const [
-        origenCoords,
-        destinoCoords,
-      ] = await Promise.all([
-        buscarLugar(origen),
-        buscarLugar(destino),
-      ]);
+      const [origenCoords, destinoCoords] =
+        await Promise.all([
+          buscarLugar(origen),
+          buscarLugar(destino),
+        ]);
 
       const ruta = await calcularRuta(
         origenCoords,
@@ -323,8 +288,7 @@ export default function CamioneroAR() {
         destino,
         vehiculo,
         distanciaKm: ruta.distanciaKm,
-        duracionMinutos:
-          ruta.duracionMinutos,
+        duracionMinutos: ruta.duracionMinutos,
       });
     } catch (e) {
       if (e instanceof Error) {
@@ -339,15 +303,10 @@ export default function CamioneroAR() {
     }
   }
 
-  function formatoDuracion(
-    minutos: number
-  ) {
-    const horas = Math.floor(
-      minutos / 60
-    );
+  function formatoDuracion(minutos: number) {
+    const horas = Math.floor(minutos / 60);
 
-    const minutosRestantes =
-      minutos % 60;
+    const minutosRestantes = minutos % 60;
 
     if (horas === 0) {
       return `${minutosRestantes} min`;
@@ -360,58 +319,33 @@ export default function CamioneroAR() {
     return `${horas} h ${minutosRestantes} min`;
   }
 
-  function calcularCombustible() {
-    if (!resultado) {
-      return null;
-    }
-
-    const consumoNumero = Number(
-      consumo.replace(",", ".")
-    );
-
-    const precioNumero = Number(
-      precioCombustible.replace(",", ".")
-    );
-
-    if (
-      !Number.isFinite(consumoNumero) ||
-      consumoNumero <= 0 ||
-      !Number.isFinite(precioNumero) ||
-      precioNumero <= 0
-    ) {
-      return null;
-    }
-
-    const distanciaTotal =
-      idaVuelta
-        ? resultado.distanciaKm * 2
-        : resultado.distanciaKm;
-
-    const litros =
-      distanciaTotal *
-      consumoNumero /
-      100;
-
-    const costo =
-      litros *
-      precioNumero;
-
-    return {
-      distanciaTotal:
-        Math.round(distanciaTotal * 10) / 10,
-
-      litros:
-        Math.round(litros * 10) / 10,
-
-      costo:
-        Math.round(costo),
-    };
+  function formatoNumero(numero: number) {
+    return new Intl.NumberFormat("es-AR", {
+      maximumFractionDigits: 1,
+    }).format(numero);
   }
 
-  const perfil = perfiles[vehiculo];
+  function formatoPesos(numero: number) {
+    return new Intl.NumberFormat("es-AR", {
+      style: "currency",
+      currency: "ARS",
+      maximumFractionDigits: 0,
+    }).format(numero);
+  }
 
-  const combustible =
-    calcularCombustible();
+  const perfilActual = perfiles[vehiculo];
+
+  const distanciaIdaVuelta = resultado
+    ? resultado.distanciaKm * 2
+    : 0;
+
+  const litrosEstimados =
+    resultado && consumo > 0
+      ? (distanciaIdaVuelta * consumo) / 100
+      : 0;
+
+  const costoEstimado =
+    litrosEstimados * precioGasoil;
 
   return (
     <main
@@ -558,9 +492,7 @@ export default function CamioneroAR() {
           id="vehiculo"
           value={vehiculo}
           onChange={(e) =>
-            cambiarVehiculo(
-              e.target.value
-            )
+            cambiarVehiculo(e.target.value)
           }
           style={{
             width: "100%",
@@ -570,7 +502,7 @@ export default function CamioneroAR() {
             border:
               "1px solid #cbd5e1",
             fontSize: "17px",
-            marginBottom: "25px",
+            marginBottom: "20px",
             background: "#ffffff",
           }}
         >
@@ -587,7 +519,7 @@ export default function CamioneroAR() {
           <option>Bitren</option>
         </select>
 
-        {perfil && (
+        {perfilActual && (
           <div
             style={{
               marginBottom: "25px",
@@ -601,7 +533,6 @@ export default function CamioneroAR() {
             <h3
               style={{
                 marginTop: 0,
-                marginBottom: "18px",
                 color: "#172033",
                 fontSize: "22px",
               }}
@@ -614,76 +545,69 @@ export default function CamioneroAR() {
                 display: "grid",
                 gridTemplateColumns:
                   "1fr 1fr",
-                gap: "15px",
+                gap: "16px",
               }}
             >
               <div>
                 <strong>Largo</strong>
                 <br />
-                {perfil.largo}
+                {perfilActual.largo}
               </div>
 
               <div>
                 <strong>Ancho</strong>
                 <br />
-                {perfil.ancho}
+                {perfilActual.ancho}
               </div>
 
               <div>
                 <strong>Altura</strong>
                 <br />
-                {perfil.altura}
+                {perfilActual.altura}
               </div>
 
               <div>
                 <strong>Peso</strong>
                 <br />
-                {perfil.peso}
+                {perfilActual.peso}
               </div>
 
               <div>
                 <strong>Ejes</strong>
                 <br />
-                {perfil.ejes}
+                {perfilActual.ejes}
+              </div>
+
+              <div>
+                <strong>Consumo sugerido</strong>
+                <br />
+                {perfilActual.consumo} L/100 km
               </div>
             </div>
           </div>
         )}
 
-        <div
+        <label
+          htmlFor="consumo"
           style={{
-            marginBottom: "25px",
-            padding: "20px",
-            borderRadius: "18px",
-            background: "#f8fafc",
-            border:
-              "1px solid #e2e8f0",
+            display: "block",
+            fontWeight: "bold",
+            fontSize: "18px",
+            marginBottom: "8px",
+            color: "#172033",
           }}
         >
-          <h3
-            style={{
-              marginTop: 0,
-              marginBottom: "18px",
-              color: "#172033",
-              fontSize: "22px",
-            }}
-          >
-            ⛽ Combustible
-          </h3>
+          Consumo del vehículo
+        </label>
 
-          <label
-            htmlFor="consumo"
-            style={{
-              display: "block",
-              fontWeight: "bold",
-              fontSize: "16px",
-              marginBottom: "8px",
-              color: "#172033",
-            }}
-          >
-            Consumo (L/100 km)
-          </label>
-
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            marginBottom: "20px",
+          }}
+        >
           <input
             id="consumo"
             type="number"
@@ -691,82 +615,91 @@ export default function CamioneroAR() {
             step="0.1"
             value={consumo}
             onChange={(e) =>
-              setConsumo(e.target.value)
+              setConsumo(
+                Number(e.target.value)
+              )
             }
             style={{
-              width: "100%",
+              flex: 1,
               boxSizing: "border-box",
-              padding: "14px",
+              padding: "16px",
               borderRadius: "12px",
               border:
                 "1px solid #cbd5e1",
               fontSize: "17px",
-              marginBottom: "18px",
             }}
           />
 
-          <label
-            htmlFor="precio"
+          <span
             style={{
-              display: "block",
               fontWeight: "bold",
-              fontSize: "16px",
-              marginBottom: "8px",
-              color: "#172033",
+              color: "#374151",
             }}
           >
-            Precio del combustible ($/L)
-          </label>
+            L/100 km
+          </span>
+        </div>
+
+        <label
+          htmlFor="precio"
+          style={{
+            display: "block",
+            fontWeight: "bold",
+            fontSize: "18px",
+            marginBottom: "8px",
+            color: "#172033",
+          }}
+        >
+          Precio del gasoil
+        </label>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "10px",
+            marginBottom: "25px",
+          }}
+        >
+          <span
+            style={{
+              fontWeight: "bold",
+              fontSize: "20px",
+            }}
+          >
+            $
+          </span>
 
           <input
             id="precio"
             type="number"
             min="1"
             step="1"
-            value={precioCombustible}
+            value={precioGasoil}
             onChange={(e) =>
-              setPrecioCombustible(
-                e.target.value
+              setPrecioGasoil(
+                Number(e.target.value)
               )
             }
             style={{
-              width: "100%",
+              flex: 1,
               boxSizing: "border-box",
-              padding: "14px",
+              padding: "16px",
               borderRadius: "12px",
               border:
                 "1px solid #cbd5e1",
               fontSize: "17px",
-              marginBottom: "18px",
             }}
           />
 
-          <label
+          <span
             style={{
-              display: "flex",
-              alignItems: "center",
-              gap: "10px",
-              fontSize: "17px",
-              color: "#172033",
-              cursor: "pointer",
+              fontWeight: "bold",
+              color: "#374151",
             }}
           >
-            <input
-              type="checkbox"
-              checked={idaVuelta}
-              onChange={(e) =>
-                setIdaVuelta(
-                  e.target.checked
-                )
-              }
-              style={{
-                width: "20px",
-                height: "20px",
-              }}
-            />
-
-            Calcular ida y vuelta
-          </label>
+            por litro
+          </span>
         </div>
 
         <button
@@ -828,172 +761,239 @@ export default function CamioneroAR() {
         )}
 
         {resultado && (
-          <div
-            style={{
-              marginTop: "25px",
-              padding: "22px",
-              borderRadius: "18px",
-              background: "#f8fafc",
-              border:
-                "1px solid #e2e8f0",
-            }}
-          >
-            <h3
+          <>
+            <div
               style={{
-                marginTop: 0,
-                color: "#172033",
-                fontSize: "22px",
+                marginTop: "25px",
+                padding: "22px",
+                borderRadius: "18px",
+                background: "#f8fafc",
+                border:
+                  "1px solid #e2e8f0",
               }}
             >
-              📍 Resultado de la ruta
-            </h3>
-
-            <p>
-              <strong>Origen:</strong>{" "}
-              {resultado.origen}
-            </p>
-
-            <p>
-              <strong>Destino:</strong>{" "}
-              {resultado.destino}
-            </p>
-
-            <p>
-              <strong>Vehículo:</strong>{" "}
-              {resultado.vehiculo}
-            </p>
-
-            <p>
-              <strong>Distancia:</strong>{" "}
-              {resultado.distanciaKm} km
-            </p>
-
-            <p>
-              <strong>
-                Duración estimada:
-              </strong>{" "}
-              {formatoDuracion(
-                resultado.duracionMinutos
-              )}
-            </p>
-
-            {combustible && (
-              <div
+              <h3
                 style={{
-                  marginTop: "25px",
-                  padding: "20px",
-                  borderRadius: "16px",
-                  background: "#ecfdf5",
-                  border:
-                    "1px solid #a7f3d0",
+                  marginTop: 0,
+                  color: "#172033",
+                  fontSize: "22px",
                 }}
               >
-                <h3
-                  style={{
-                    marginTop: 0,
-                    color: "#065f46",
-                    fontSize: "22px",
-                  }}
-                >
-                  ⛽ Estimación de combustible
-                </h3>
+                📍 Resultado de la ruta
+              </h3>
 
-                <p
-                  style={{
-                    fontSize: "17px",
-                  }}
-                >
-                  <strong>
-                    Distancia calculada:
-                  </strong>{" "}
-                  {combustible.distanciaTotal} km
-                </p>
+              <p>
+                <strong>Origen:</strong>{" "}
+                {resultado.origen}
+              </p>
 
-                <p
-                  style={{
-                    fontSize: "17px",
-                  }}
-                >
-                  <strong>
-                    Consumo:
-                  </strong>{" "}
-                  {consumo} L/100 km
-                </p>
+              <p>
+                <strong>Destino:</strong>{" "}
+                {resultado.destino}
+              </p>
 
-                <p
-                  style={{
-                    fontSize: "17px",
-                  }}
-                >
-                  <strong>
-                    Litros estimados:
-                  </strong>{" "}
-                  {combustible.litros} L
-                </p>
+              <p>
+                <strong>Vehículo:</strong>{" "}
+                {resultado.vehiculo}
+              </p>
 
-                <p
-                  style={{
-                    fontSize: "22px",
-                    fontWeight: "bold",
-                    color: "#065f46",
-                  }}
-                >
-                  💰 Costo estimado: $
-                  {combustible.costo.toLocaleString(
-                    "es-AR"
-                  )}
-                </p>
+              <p>
+                <strong>Distancia de ida:</strong>{" "}
+                {formatoNumero(
+                  resultado.distanciaKm
+                )}{" "}
+                km
+              </p>
 
-                <p
-                  style={{
-                    marginBottom: 0,
-                    fontSize: "13px",
-                    color: "#065f46",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  El cálculo es una estimación
-                  matemática basada en la distancia
-                  de la ruta, el consumo ingresado
-                  y el precio indicado.
-                </p>
-              </div>
-            )}
+              <p>
+                <strong>Distancia ida y vuelta:</strong>{" "}
+                {formatoNumero(
+                  distanciaIdaVuelta
+                )}{" "}
+                km
+              </p>
+
+              <p>
+                <strong>Duración estimada de ida:</strong>{" "}
+                {formatoDuracion(
+                  resultado.duracionMinutos
+                )}
+              </p>
+            </div>
 
             <div
               style={{
-                marginTop: "20px",
-                padding: "15px",
-                borderRadius: "12px",
-                background: "#fff7ed",
-                color: "#7c2d12",
-                fontSize: "14px",
-                lineHeight: 1.5,
+                marginTop: "25px",
+                padding: "24px",
+                borderRadius: "18px",
+                background: "#ecfdf5",
+                border:
+                  "1px solid #a7f3d0",
               }}
             >
-              ⚠️ La ruta calculada es una
-              estimación vial. El perfil del
-              vehículo todavía no modifica
-              automáticamente el trazado.
+              <h3
+                style={{
+                  marginTop: 0,
+                  color: "#065f46",
+                  fontSize: "24px",
+                }}
+              >
+                ⛽ Estimación de combustible
+              </h3>
 
-              <br />
-              <br />
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "#064e3b",
+                }}
+              >
+                <strong>
+                  Distancia calculada:
+                </strong>{" "}
+                {formatoNumero(
+                  distanciaIdaVuelta
+                )}{" "}
+                km
+              </p>
 
-              Esta versión todavía no verifica
-              restricciones específicas para
-              transporte pesado, peso por eje,
-              altura máxima, puentes, peajes,
-              tránsito, permisos ni restricciones
-              legales.
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "#064e3b",
+                }}
+              >
+                <strong>Consumo:</strong>{" "}
+                {formatoNumero(consumo)} L/100 km
+              </p>
+
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "#064e3b",
+                }}
+              >
+                <strong>
+                  Litros estimados:
+                </strong>{" "}
+                {formatoNumero(
+                  litrosEstimados
+                )}{" "}
+                L
+              </p>
+
+              <p
+                style={{
+                  fontSize: "18px",
+                  color: "#064e3b",
+                }}
+              >
+                <strong>
+                  Precio del gasoil:
+                </strong>{" "}
+                {formatoPesos(
+                  precioGasoil
+                )}{" "}
+                / L
+              </p>
+
+              <div
+                style={{
+                  marginTop: "20px",
+                  paddingTop: "20px",
+                  borderTop:
+                    "1px solid #a7f3d0",
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: "18px",
+                    color: "#065f46",
+                    marginBottom: "6px",
+                  }}
+                >
+                  💰 <strong>
+                    Costo estimado:
+                  </strong>
+                </div>
+
+                <div
+                  style={{
+                    fontSize: "32px",
+                    fontWeight: "bold",
+                    color: "#047857",
+                  }}
+                >
+                  {formatoPesos(
+                    costoEstimado
+                  )}
+                </div>
+              </div>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  marginTop: "20px",
+                  fontSize: "14px",
+                  lineHeight: 1.5,
+                  color: "#065f46",
+                }}
+              >
+                El cálculo utiliza la distancia
+                de ida y vuelta, el consumo
+                ingresado y el precio del
+                combustible indicado. Es una
+                estimación matemática y no
+                contempla desvíos, ralentí,
+                tráfico, carga, pendientes ni
+                otras condiciones reales de
+                operación.
+              </p>
             </div>
-          </div>
+
+            <div
+              style={{
+                marginTop: "25px",
+                padding: "20px",
+                borderRadius: "18px",
+                background: "#fff7ed",
+                border:
+                  "1px solid #fed7aa",
+              }}
+            >
+              <p
+                style={{
+                  margin: 0,
+                  color: "#7c2d12",
+                  fontSize: "15px",
+                  lineHeight: 1.6,
+                }}
+              >
+                ⚠️ <strong>Importante:</strong>{" "}
+                la ruta calculada actualmente
+                utiliza un motor vial general.
+                El perfil del vehículo se utiliza
+                para los cálculos y como referencia,
+                pero todavía no modifica
+                automáticamente el trazado.
+
+                <br />
+                <br />
+
+                Esta versión todavía no verifica
+                restricciones específicas para
+                transporte pesado, peso por eje,
+                altura máxima, puentes, peajes,
+                tránsito, permisos ni
+                restricciones legales.
+              </p>
+            </div>
+          </>
         )}
 
         <p
           style={{
-            textAlign: "center",
             marginTop: "30px",
-            marginBottom: 0,
+            textAlign: "center",
             color: "#94a3b8",
             fontSize: "14px",
           }}
