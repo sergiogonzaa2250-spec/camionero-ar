@@ -9,13 +9,21 @@ export default function Home() {
   const [resultado, setResultado] = useState("");
 
   function planificarRuta() {
-    if (!origen || !destino) {
+    if (!origen.trim() || !destino.trim()) {
       setResultado("Completá el origen y el destino.");
       return;
     }
 
+    const origenMaps = encodeURIComponent(origen);
+    const destinoMaps = encodeURIComponent(destino);
+
     setResultado(
-      `Ruta solicitada: ${origen} → ${destino}. Vehículo: ${vehiculo}.`
+      `Viaje: ${origen} → ${destino}\nVehículo: ${vehiculo}`
+    );
+
+    window.open(
+      `https://www.google.com/maps/dir/?api=1&origin=${origenMaps}&destination=${destinoMaps}&travelmode=driving`,
+      "_blank"
     );
   }
 
@@ -64,13 +72,13 @@ export default function Home() {
           </select>
 
           <button onClick={planificarRuta}>
-            Planificar ruta
+            🗺️ Planificar ruta
           </button>
 
           {resultado && (
             <div className="card" style={{ marginTop: "20px" }}>
               <strong>Resultado</strong>
-              <p>{resultado}</p>
+              <p style={{ whiteSpace: "pre-line" }}>{resultado}</p>
             </div>
           )}
         </div>
