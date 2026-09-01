@@ -48,8 +48,8 @@ export default function Home() {
       const origenData = await origenGeo.json();
       const destinoData = await destinoGeo.json();
 
-      const origenFeature = origenData.features?.[0];
-      const destinoFeature = destinoData.features?.[0];
+      const OrigenCaracteristica = origenData.features?.[0];
+const DestinoCaracteristica = destinoData.features?.[0];
 
       if (!origenFeature || !destinoFeature) {
         throw new Error(
