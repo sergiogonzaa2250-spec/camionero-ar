@@ -2,14 +2,6 @@
 
 import { useState } from "react";
 
-type ResultadoRuta = {
-  origen: string;
-  destino: string;
-  vehiculo: string;
-  distanciaKm: number;
-  duracionMinutos: number;
-};
-
 type Coordenadas = {
   lon: number;
   lat: number;
@@ -23,6 +15,14 @@ type PerfilVehiculo = {
   ejes: string;
 };
 
+type ResultadoRuta = {
+  origen: string;
+  destino: string;
+  vehiculo: string;
+  distanciaKm: number;
+  duracionMinutos: number;
+};
+
 const perfiles: Record<string, PerfilVehiculo> = {
   Camión: {
     largo: "12 m",
@@ -33,7 +33,7 @@ const perfiles: Record<string, PerfilVehiculo> = {
   },
 
   "Camión con acoplado": {
-    largo: "20 m",
+    largo: "20.5 m",
     ancho: "2.6 m",
     altura: "4.1 m",
     peso: "45 t",
@@ -66,17 +66,14 @@ export default function CamioneroAR() {
     "Rosario, Santa Fe, Argentina"
   );
 
-  const [vehiculo, setVehiculo] = useState(
-    "Camión con semirremolque"
-  );
+  const [vehiculo, setVehiculo] = useState("Camión");
 
   const [resultado, setResultado] =
     useState<ResultadoRuta | null>(null);
 
   const [error, setError] = useState("");
-  const [cargando, setCargando] = useState(false);
 
-  const perfil = perfiles[vehiculo];
+  const [cargando, setCargando] = useState(false);
 
   async function buscarLugar(lugar: string): Promise<Coordenadas> {
     const texto = lugar.trim();
@@ -94,14 +91,15 @@ export default function CamioneroAR() {
         new URLSearchParams({
           q: texto,
           limit: "1",
+          lang: "es",
         }).toString();
 
-      const respuestaPhoton = await fetch(photonUrl);
+      const respuesta = await fetch(photonUrl);
 
-      if (respuestaPhoton.ok) {
-        const datosPhoton = await respuestaPhoton.json();
+      if (respuesta.ok) {
+        const datos = await respuesta.json();
 
-        const feature = datosPhoton?.features?.[0];
+        const feature = datos?.features?.[0];
 
         const coordenadas =
           feature?.geometry?.coordinates;
@@ -120,7 +118,7 @@ export default function CamioneroAR() {
       }
     } catch {
       /*
-       * Si Photon falla, continuamos con el segundo servicio.
+       * Si Photon falla, seguimos con Nominatim.
        */
     }
 
@@ -138,15 +136,12 @@ export default function CamioneroAR() {
           "accept-language": "es",
         }).toString();
 
-      const respuestaNominatim =
-        await fetch(nominatimUrl);
+      const respuesta = await fetch(nominatimUrl);
 
-      if (respuestaNominatim.ok) {
-        const datosNominatim =
-          await respuestaNominatim.json();
+      if (respuesta.ok) {
+        const datos = await respuesta.json();
 
-        const lugarEncontrado =
-          datosNominatim?.[0];
+        const lugarEncontrado = datos?.[0];
 
         if (
           lugarEncontrado &&
@@ -161,12 +156,12 @@ export default function CamioneroAR() {
       }
     } catch {
       /*
-       * Continuamos hacia el error final.
+       * Se maneja abajo con un mensaje claro.
        */
     }
 
     throw new Error(
-      `No se pudo localizar "${texto}". Probá escribiendo ciudad y provincia.`
+      `No se encontró "${texto}". Probá escribiendo ciudad y provincia.`
     );
   }
 
@@ -191,7 +186,7 @@ export default function CamioneroAR() {
 
     const url =
       `https://router.project-osrm.org/route/v1/driving/${coordenadas}` +
-      `?overview=false&steps=false`;
+      "?overview=false&steps=false";
 
     const respuesta = await fetch(url);
 
@@ -214,7 +209,7 @@ export default function CamioneroAR() {
 
     if (!ruta) {
       throw new Error(
-        "No se encontró una ruta entre los lugares indicados."
+        "No se encontró una ruta entre los lugares."
       );
     }
 
@@ -229,9 +224,7 @@ export default function CamioneroAR() {
 
     return {
       distanciaKm:
-        Math.round(
-          (Number(ruta.distance) / 1000) * 10
-        ) / 10,
+        Math.round((Number(ruta.distance) / 1000) * 10) / 10,
 
       duracionMinutos:
         Math.round(Number(ruta.duration) / 60),
@@ -279,7 +272,7 @@ export default function CamioneroAR() {
         setError(e.message);
       } else {
         setError(
-          "Ocurrió un error inesperado al calcular la ruta."
+          "Ocurrió un error al calcular la ruta."
         );
       }
     } finally {
@@ -301,6 +294,8 @@ export default function CamioneroAR() {
 
     return `${horas} h ${minutosRestantes} min`;
   }
+
+  const perfil = perfiles[vehiculo];
 
   return (
     <main
@@ -457,7 +452,7 @@ export default function CamioneroAR() {
             border:
               "1px solid #cbd5e1",
             fontSize: "17px",
-            marginBottom: "20px",
+            marginBottom: "25px",
             background: "#ffffff",
           }}
         >
@@ -498,32 +493,37 @@ export default function CamioneroAR() {
                 display: "grid",
                 gridTemplateColumns:
                   "1fr 1fr",
-                gap: "16px",
+                gap: "15px",
               }}
             >
               <div>
                 <strong>Largo</strong>
-                <div>{perfil.largo}</div>
+                <br />
+                {perfil.largo}
               </div>
 
               <div>
                 <strong>Ancho</strong>
-                <div>{perfil.ancho}</div>
+                <br />
+                {perfil.ancho}
               </div>
 
               <div>
                 <strong>Altura</strong>
-                <div>{perfil.altura}</div>
+                <br />
+                {perfil.altura}
               </div>
 
               <div>
                 <strong>Peso</strong>
-                <div>{perfil.peso}</div>
+                <br />
+                {perfil.peso}
               </div>
 
               <div>
                 <strong>Ejes</strong>
-                <div>{perfil.ejes}</div>
+                <br />
+                {perfil.ejes}
               </div>
             </div>
           </div>
@@ -650,8 +650,10 @@ export default function CamioneroAR() {
             >
               ⚠️ La ruta calculada es una
               estimación vial. El perfil del
-              vehículo todavía no modifica el
-              trazado automáticamente.
+              vehículo se muestra como
+              referencia, pero todavía no
+              modifica automáticamente el
+              trazado.
 
               <br />
               <br />
@@ -660,16 +662,17 @@ export default function CamioneroAR() {
               restricciones específicas para
               transporte pesado, peso por eje,
               altura máxima, puentes, peajes,
-              tránsito, permisos ni restricciones
-              legales.
+              tránsito, permisos ni
+              restricciones legales.
             </div>
           </div>
         )}
 
         <p
           style={{
-            marginTop: "30px",
             textAlign: "center",
+            marginTop: "30px",
+            marginBottom: 0,
             color: "#94a3b8",
             fontSize: "14px",
           }}
