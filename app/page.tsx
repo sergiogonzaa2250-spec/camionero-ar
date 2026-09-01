@@ -28,17 +28,13 @@ export default function Home() {
     setError("");
     setResultado(null);
 
-    try {
-      const origenGeo = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          origen
-        )}&limit=1&lang=es`
-      );
+    const origenGeo = await fetch(
+  `https://photon.komoot.io/api/?q=${encodeURIComponent(origen)}&limit=1&lang=es`
+);
 
-      const destinoGeo = await fetch(
-        `https://photon.komoot.io/api/?q=${encodeURIComponent(
-          destino
-        )}&limit=1&lang=es`
+const destinoGeo = await fetch(
+  `https://photon.komoot.io/api/?q=${encodeURIComponent(destino)}&limit=1&lang=es`
+
       );
 
       if (!origenGeo.ok || !destinoGeo.ok) {
