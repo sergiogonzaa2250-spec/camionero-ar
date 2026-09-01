@@ -3,11 +3,8 @@
 import { useState } from "react";
 
 type ResultadoRuta = {
-  origen: string;
-  destino: string;
-  vehiculo: string;
   distanciaKm: number;
-  duracionMinutos: number;
+  duracionMin: number;
 };
 
 type Coordenadas = {
@@ -16,53 +13,65 @@ type Coordenadas = {
 };
 
 type PerfilVehiculo = {
-  largo: string;
-  ancho: string;
-  altura: string;
-  peso: string;
-  ejes: string;
+  nombre: string;
+  largo: number;
+  ancho: number;
+  altura: number;
+  peso: number;
+  ejes: number;
   consumo: number;
 };
 
+type EstadoRestriccion = "COMPATIBLE" | "EXCEDE" | "NO_VERIFICADA";
+
+type EvaluacionVehiculo = {
+  estado: EstadoRestriccion;
+  observaciones: string[];
+};
+
 const perfiles: Record<string, PerfilVehiculo> = {
-  Camión: {
-    largo: "12 m",
-    ancho: "2.6 m",
-    altura: "4.1 m",
-    peso: "30 t",
-    ejes: "3",
+  camion: {
+    nombre: "Camión",
+    largo: 12,
+    ancho: 2.6,
+    altura: 4.1,
+    peso: 30,
+    ejes: 3,
     consumo: 28,
   },
 
-  "Camión con acoplado": {
-    largo: "20 m",
-    ancho: "2.6 m",
-    altura: "4.1 m",
-    peso: "45 t",
-    ejes: "6",
+  camionAcoplado: {
+    nombre: "Camión con acoplado",
+    largo: 20.5,
+    ancho: 2.6,
+    altura: 4.1,
+    peso: 45,
+    ejes: 6,
     consumo: 32,
   },
 
-  "Camión con semirremolque": {
-    largo: "18.5 m",
-    ancho: "2.6 m",
-    altura: "4.1 m",
-    peso: "45 t",
-    ejes: "5",
+  camionSemirremolque: {
+    nombre: "Camión con semirremolque",
+    largo: 18.5,
+    ancho: 2.6,
+    altura: 4.1,
+    peso: 45,
+    ejes: 5,
     consumo: 32,
   },
 
-  Bitren: {
-    largo: "30 m",
-    ancho: "2.6 m",
-    altura: "4.3 m",
-    peso: "75 t",
-    ejes: "9",
+  bitren: {
+    nombre: "Bitren",
+    largo: 30,
+    ancho: 2.6,
+    altura: 4.3,
+    peso: 75,
+    ejes: 9,
     consumo: 35,
   },
 };
 
-export default function CamioneroAR() {
+export default function Home() {
   const [origen, setOrigen] = useState(
     "Campana, Buenos Aires, Argentina"
   );
@@ -72,24 +81,25 @@ export default function CamioneroAR() {
   );
 
   const [vehiculo, setVehiculo] = useState(
-    "Camión con semirremolque"
+    "camionSemirremolque"
   );
 
   const [consumo, setConsumo] = useState(32);
-
   const [precioGasoil, setPrecioGasoil] = useState(1500);
 
   const [resultado, setResultado] =
     useState<ResultadoRuta | null>(null);
 
+  const [evaluacion, setEvaluacion] =
+    useState<EvaluacionVehiculo | null>(null);
+
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
-  const [cargando, setCargando] = useState(false);
+  function cambiarVehiculo(valor: string) {
+    setVehiculo(valor);
 
-  function cambiarVehiculo(nuevoVehiculo: string) {
-    setVehiculo(nuevoVehiculo);
-
-    const perfil = perfiles[nuevoVehiculo];
+    const perfil = perfiles[valor];
 
     if (perfil) {
       setConsumo(perfil.consumo);
@@ -97,14 +107,8 @@ export default function CamioneroAR() {
   }
 
   async function buscarLugar(
-    lugar: string
+    texto: string
   ): Promise<Coordenadas> {
-    const texto = lugar.trim();
-
-    if (!texto) {
-      throw new Error("Ingresá una ubicación.");
-    }
-
     const url =
       "https://nominatim.openstreetmap.org/search?" +
       new URLSearchParams({
@@ -115,23 +119,15 @@ export default function CamioneroAR() {
         "accept-language": "es",
       }).toString();
 
-    let respuesta: Response;
-
-    try {
-      respuesta = await fetch(url, {
-        headers: {
-          Accept: "application/json",
-        },
-      });
-    } catch {
-      throw new Error(
-        "No se pudo conectar con el servicio de mapas."
-      );
-    }
+    const respuesta = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+      },
+    });
 
     if (!respuesta.ok) {
       throw new Error(
-        `El servicio de mapas respondió con error (${respuesta.status}).`
+        `No se pudo buscar el lugar. Código ${respuesta.status}.`
       );
     }
 
@@ -141,203 +137,270 @@ export default function CamioneroAR() {
 
     if (!lugarEncontrado) {
       throw new Error(
-        `No se encontró "${texto}". Probá agregando ciudad y provincia.`
+        `No se encontró la ubicación: ${texto}`
       );
     }
 
     const lat = Number(lugarEncontrado.lat);
     const lon = Number(lugarEncontrado.lon);
 
-    if (
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lon)
-    ) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       throw new Error(
-        `No se pudieron obtener las coordenadas de "${texto}".`
+        `La ubicación encontrada no tiene coordenadas válidas: ${texto}`
       );
     }
 
     return {
-      lon,
       lat,
+      lon,
     };
   }
 
   async function calcularRuta(
-    origenCoords: Coordenadas,
-    destinoCoords: Coordenadas
-  ) {
-    if (
-      !Number.isFinite(origenCoords.lon) ||
-      !Number.isFinite(origenCoords.lat) ||
-      !Number.isFinite(destinoCoords.lon) ||
-      !Number.isFinite(destinoCoords.lat)
-    ) {
-      throw new Error(
-        "Las coordenadas obtenidas no son válidas."
-      );
-    }
-
-    const coordenadasRuta =
-      `${origenCoords.lon},${origenCoords.lat};` +
-      `${destinoCoords.lon},${destinoCoords.lat}`;
-
+    origenCoord: Coordenadas,
+    destinoCoord: Coordenadas
+  ): Promise<ResultadoRuta> {
     const url =
-      `https://router.project-osrm.org/route/v1/driving/${coordenadasRuta}` +
+      `https://router.project-osrm.org/route/v1/driving/` +
+      `${origenCoord.lon},${origenCoord.lat};` +
+      `${destinoCoord.lon},${destinoCoord.lat}` +
       `?overview=false&steps=false`;
 
-    let respuesta: Response;
-
-    try {
-      respuesta = await fetch(url);
-    } catch {
-      throw new Error(
-        "No se pudo conectar con el servicio de rutas."
-      );
-    }
+    const respuesta = await fetch(url);
 
     if (!respuesta.ok) {
       throw new Error(
-        `El servicio de rutas respondió con error (${respuesta.status}).`
+        `El servicio de rutas respondió con error ${respuesta.status}.`
       );
     }
 
     const datos = await respuesta.json();
 
-    if (datos?.code !== "Ok") {
-      throw new Error(
-        datos?.message ||
-          "El servicio de rutas no encontró un recorrido."
-      );
-    }
-
-    const ruta = datos?.routes?.[0];
-
-    if (!ruta) {
-      throw new Error(
-        "No se encontró una ruta entre los lugares."
-      );
-    }
-
     if (
-      !Number.isFinite(Number(ruta.distance)) ||
-      !Number.isFinite(Number(ruta.duration))
+      datos?.code !== "Ok" ||
+      !datos?.routes ||
+      datos.routes.length === 0
     ) {
       throw new Error(
-        "La ruta recibida no contiene distancia o duración válidas."
+        "No se pudo calcular una ruta entre esos puntos."
+      );
+    }
+
+    const ruta = datos.routes[0];
+
+    return {
+      distanciaKm: ruta.distance / 1000,
+      duracionMin: ruta.duration / 60,
+    };
+  }
+
+  function evaluarVehiculo(): EvaluacionVehiculo {
+    const perfil = perfiles[vehiculo];
+
+    const observaciones: string[] = [];
+
+    let estado: EstadoRestriccion = "COMPATIBLE";
+
+    /*
+      Límites generales tomados del régimen nacional
+      vigente al momento de construir esta versión.
+
+      IMPORTANTE:
+      Esto NO reemplaza la evaluación específica
+      de cada tramo de la ruta.
+    */
+
+    const limiteAncho = 2.6;
+    const limiteAltura = 4.3;
+
+    let limiteLargo = 0;
+
+    switch (vehiculo) {
+      case "camion":
+        limiteLargo = 13.2;
+        break;
+
+      case "camionAcoplado":
+        limiteLargo = 20.5;
+        break;
+
+      case "camionSemirremolque":
+        limiteLargo = 19.3;
+        break;
+
+      case "bitren":
+        limiteLargo = 30.25;
+        break;
+
+      default:
+        limiteLargo = 20.5;
+    }
+
+    if (perfil.largo > limiteLargo) {
+      estado = "EXCEDE";
+
+      observaciones.push(
+        `El largo configurado (${perfil.largo.toFixed(
+          2
+        )} m) supera el límite general de referencia de ${limiteLargo.toFixed(
+          2
+        )} m para esta configuración.`
+      );
+    } else {
+      observaciones.push(
+        `Largo: ${perfil.largo.toFixed(
+          2
+        )} m / límite general: ${limiteLargo.toFixed(2)} m.`
+      );
+    }
+
+    if (perfil.ancho > limiteAncho) {
+      estado = "EXCEDE";
+
+      observaciones.push(
+        `El ancho configurado (${perfil.ancho.toFixed(
+          2
+        )} m) supera el límite general de ${limiteAncho.toFixed(
+          2
+        )} m.`
+      );
+    } else {
+      observaciones.push(
+        `Ancho: ${perfil.ancho.toFixed(
+          2
+        )} m / límite general: ${limiteAncho.toFixed(2)} m.`
+      );
+    }
+
+    if (perfil.altura > limiteAltura) {
+      estado = "EXCEDE";
+
+      observaciones.push(
+        `La altura configurada (${perfil.altura.toFixed(
+          2
+        )} m) supera el límite general de ${limiteAltura.toFixed(
+          2
+        )} m.`
+      );
+    } else {
+      observaciones.push(
+        `Altura: ${perfil.altura.toFixed(
+          2
+        )} m / límite general: ${limiteAltura.toFixed(2)} m.`
+      );
+    }
+
+    /*
+      El peso total requiere una evaluación más detallada
+      según configuración de ejes, suspensión, distribución
+      de carga y normativa aplicable.
+
+      Por eso NO marcamos automáticamente el vehículo
+      como legal solamente por el peso total.
+    */
+
+    if (perfil.peso > 45) {
+      if (vehiculo !== "bitren") {
+        estado = "EXCEDE";
+
+        observaciones.push(
+          `Peso bruto configurado: ${perfil.peso} t. Se requiere una configuración específica habilitada para superar 45 t.`
+        );
+      } else {
+        observaciones.push(
+          `Peso bruto configurado: ${perfil.peso} t. El bitren requiere verificación específica de configuración, ejes y tramo habilitado.`
+        );
+      }
+    } else {
+      observaciones.push(
+        `Peso bruto configurado: ${perfil.peso} t.`
+      );
+    }
+
+    /*
+      Aunque las dimensiones generales sean compatibles,
+      todavía necesitamos conocer las restricciones concretas
+      de cada tramo de la ruta.
+    */
+
+    if (estado === "COMPATIBLE") {
+      estado = "NO_VERIFICADA";
+
+      observaciones.push(
+        "Las dimensiones generales son compatibles, pero todavía no se verificaron las restricciones específicas de la ruta."
       );
     }
 
     return {
-      distanciaKm:
-        Math.round(
-          (Number(ruta.distance) / 1000) * 10
-        ) / 10,
-
-      duracionMinutos:
-        Math.round(Number(ruta.duration) / 60),
+      estado,
+      observaciones,
     };
   }
 
   async function planificarRuta() {
-    if (!origen.trim()) {
-      setError("Completá el origen.");
-      setResultado(null);
-      return;
-    }
-
-    if (!destino.trim()) {
-      setError("Completá el destino.");
-      setResultado(null);
-      return;
-    }
-
-    if (
-      !Number.isFinite(consumo) ||
-      consumo <= 0
-    ) {
-      setError(
-        "El consumo debe ser mayor que 0 L/100 km."
-      );
-      setResultado(null);
-      return;
-    }
-
-    if (
-      !Number.isFinite(precioGasoil) ||
-      precioGasoil <= 0
-    ) {
-      setError(
-        "Ingresá un precio de gasoil válido."
-      );
-      setResultado(null);
-      return;
-    }
-
-    setCargando(true);
     setError("");
     setResultado(null);
+    setEvaluacion(null);
+    setLoading(true);
 
     try {
-      const [origenCoords, destinoCoords] =
+      if (!origen.trim()) {
+        throw new Error(
+          "Ingresá un lugar de origen."
+        );
+      }
+
+      if (!destino.trim()) {
+        throw new Error(
+          "Ingresá un lugar de destino."
+        );
+      }
+
+      if (
+        !Number.isFinite(consumo) ||
+        consumo <= 0
+      ) {
+        throw new Error(
+          "El consumo debe ser mayor que cero."
+        );
+      }
+
+      if (
+        !Number.isFinite(precioGasoil) ||
+        precioGasoil <= 0
+      ) {
+        throw new Error(
+          "El precio del gasoil debe ser mayor que cero."
+        );
+      }
+
+      const [origenCoord, destinoCoord] =
         await Promise.all([
           buscarLugar(origen),
           buscarLugar(destino),
         ]);
 
       const ruta = await calcularRuta(
-        origenCoords,
-        destinoCoords
+        origenCoord,
+        destinoCoord
       );
 
-      setResultado({
-        origen,
-        destino,
-        vehiculo,
-        distanciaKm: ruta.distanciaKm,
-        duracionMinutos: ruta.duracionMinutos,
-      });
-    } catch (e) {
-      if (e instanceof Error) {
-        setError(e.message);
+      const evaluacionVehiculo =
+        evaluarVehiculo();
+
+      setResultado(ruta);
+      setEvaluacion(evaluacionVehiculo);
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
       } else {
         setError(
-          "Ocurrió un error al calcular la ruta."
+          "Ocurrió un error inesperado."
         );
       }
     } finally {
-      setCargando(false);
+      setLoading(false);
     }
-  }
-
-  function formatoDuracion(minutos: number) {
-    const horas = Math.floor(minutos / 60);
-
-    const minutosRestantes = minutos % 60;
-
-    if (horas === 0) {
-      return `${minutosRestantes} min`;
-    }
-
-    if (minutosRestantes === 0) {
-      return `${horas} h`;
-    }
-
-    return `${horas} h ${minutosRestantes} min`;
-  }
-
-  function formatoNumero(numero: number) {
-    return new Intl.NumberFormat("es-AR", {
-      maximumFractionDigits: 1,
-    }).format(numero);
-  }
-
-  function formatoPesos(numero: number) {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-      maximumFractionDigits: 0,
-    }).format(numero);
   }
 
   const perfilActual = perfiles[vehiculo];
@@ -346,237 +409,235 @@ export default function CamioneroAR() {
     ? resultado.distanciaKm * 2
     : 0;
 
-  const litrosEstimados =
-    resultado && consumo > 0
-      ? (distanciaIdaVuelta * consumo) / 100
-      : 0;
+  const litrosEstimados = resultado
+    ? (distanciaIdaVuelta * consumo) / 100
+    : 0;
 
   const costoEstimado =
     litrosEstimados * precioGasoil;
+
+  function formatoNumero(numero: number) {
+    return new Intl.NumberFormat(
+      "es-AR",
+      {
+        maximumFractionDigits: 1,
+      }
+    ).format(numero);
+  }
+
+  function formatoDinero(numero: number) {
+    return new Intl.NumberFormat(
+      "es-AR",
+      {
+        style: "currency",
+        currency: "ARS",
+        maximumFractionDigits: 0,
+      }
+    ).format(numero);
+  }
+
+  function textoEstado(
+    estado: EstadoRestriccion
+  ) {
+    if (estado === "COMPATIBLE") {
+      return "🟢 COMPATIBLE";
+    }
+
+    if (estado === "EXCEDE") {
+      return "🔴 EXCEDE LÍMITES";
+    }
+
+    return "⚪ RUTA NO VERIFICADA";
+  }
+
+  function colorEstado(
+    estado: EstadoRestriccion
+  ) {
+    if (estado === "COMPATIBLE") {
+      return "#dcfce7";
+    }
+
+    if (estado === "EXCEDE") {
+      return "#fee2e2";
+    }
+
+    return "#f3f4f6";
+  }
 
   return (
     <main
       style={{
         minHeight: "100vh",
-        background: "#f1f5f9",
-        padding: "20px",
-        fontFamily:
-          "Arial, Helvetica, sans-serif",
+        background: "#f5f7fb",
+        padding: "24px 16px 60px",
+        color: "#172033",
       }}
     >
       <div
         style={{
-          maxWidth: "700px",
+          maxWidth: 720,
           margin: "0 auto",
-          background: "#ffffff",
-          borderRadius: "24px",
-          padding: "28px",
-          boxShadow:
-            "0 10px 30px rgba(0,0,0,0.08)",
         }}
       >
-        <h1
+        <header
           style={{
-            margin: "0 0 10px",
-            fontSize: "36px",
-            color: "#172033",
+            marginBottom: 24,
           }}
         >
-          🚚 Camionero AR
-        </h1>
+          <h1
+            style={{
+              fontSize: 32,
+              margin: 0,
+              fontWeight: 800,
+            }}
+          >
+            🚛 Camionero AR
+          </h1>
 
-        <p
+          <p
+            style={{
+              marginTop: 8,
+              color: "#526071",
+              fontSize: 16,
+            }}
+          >
+            Planificación de transporte pesado
+            en Argentina
+          </p>
+        </header>
+
+        <section
           style={{
-            fontSize: "18px",
-            lineHeight: 1.6,
-            color: "#374151",
-            marginBottom: "25px",
+            background: "white",
+            borderRadius: 18,
+            padding: 20,
+            boxShadow:
+              "0 8px 30px rgba(20,30,50,0.08)",
+            marginBottom: 20,
           }}
         >
-          Planificador de rutas para transporte
-          pesado en Argentina.
-        </p>
+          <h2
+            style={{
+              marginTop: 0,
+              fontSize: 22,
+            }}
+          >
+            📍 Planificar ruta
+          </h2>
 
-        <hr
-          style={{
-            border: 0,
-            borderTop:
-              "1px solid #e5e7eb",
-            marginBottom: "25px",
-          }}
-        />
+          <label
+            style={{
+              display: "block",
+              fontWeight: 700,
+              marginBottom: 6,
+            }}
+          >
+            Origen
+          </label>
 
-        <h2
-          style={{
-            fontSize: "28px",
-            color: "#172033",
-            marginBottom: "25px",
-          }}
-        >
-          Planificar viaje
-        </h2>
+          <input
+            value={origen}
+            onChange={(e) =>
+              setOrigen(e.target.value)
+            }
+            placeholder="Ej.: Campana, Buenos Aires"
+            style={inputStyle}
+          />
 
-        <label
-          htmlFor="origen"
-          style={{
-            display: "block",
-            fontWeight: "bold",
-            fontSize: "18px",
-            marginBottom: "8px",
-            color: "#172033",
-          }}
-        >
-          Origen
-        </label>
+          <label
+            style={{
+              display: "block",
+              fontWeight: 700,
+              marginBottom: 6,
+            }}
+          >
+            Destino
+          </label>
 
-        <input
-          id="origen"
-          type="text"
-          placeholder="Ej.: Campana, Buenos Aires"
-          value={origen}
-          onChange={(e) =>
-            setOrigen(e.target.value)
-          }
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: "16px",
-            borderRadius: "12px",
-            border:
-              "1px solid #cbd5e1",
-            fontSize: "17px",
-            marginBottom: "20px",
-          }}
-        />
+          <input
+            value={destino}
+            onChange={(e) =>
+              setDestino(e.target.value)
+            }
+            placeholder="Ej.: Rosario, Santa Fe"
+            style={inputStyle}
+          />
 
-        <label
-          htmlFor="destino"
-          style={{
-            display: "block",
-            fontWeight: "bold",
-            fontSize: "18px",
-            marginBottom: "8px",
-            color: "#172033",
-          }}
-        >
-          Destino
-        </label>
+          <label
+            style={{
+              display: "block",
+              fontWeight: 700,
+              marginBottom: 6,
+            }}
+          >
+            Tipo de vehículo
+          </label>
 
-        <input
-          id="destino"
-          type="text"
-          placeholder="Ej.: Rosario, Santa Fe"
-          value={destino}
-          onChange={(e) =>
-            setDestino(e.target.value)
-          }
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: "16px",
-            borderRadius: "12px",
-            border:
-              "1px solid #cbd5e1",
-            fontSize: "17px",
-            marginBottom: "20px",
-          }}
-        />
+          <select
+            value={vehiculo}
+            onChange={(e) =>
+              cambiarVehiculo(e.target.value)
+            }
+            style={inputStyle}
+          >
+            <option value="camion">
+              Camión
+            </option>
 
-        <label
-          htmlFor="vehiculo"
-          style={{
-            display: "block",
-            fontWeight: "bold",
-            fontSize: "18px",
-            marginBottom: "8px",
-            color: "#172033",
-          }}
-        >
-          Tipo de vehículo
-        </label>
+            <option value="camionAcoplado">
+              Camión con acoplado
+            </option>
 
-        <select
-          id="vehiculo"
-          value={vehiculo}
-          onChange={(e) =>
-            cambiarVehiculo(e.target.value)
-          }
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            padding: "16px",
-            borderRadius: "12px",
-            border:
-              "1px solid #cbd5e1",
-            fontSize: "17px",
-            marginBottom: "20px",
-            background: "#ffffff",
-          }}
-        >
-          <option>Camión</option>
+            <option value="camionSemirremolque">
+              Camión con semirremolque
+            </option>
 
-          <option>
-            Camión con acoplado
-          </option>
+            <option value="bitren">
+              Bitren
+            </option>
+          </select>
 
-          <option>
-            Camión con semirremolque
-          </option>
-
-          <option>Bitren</option>
-        </select>
-
-        {perfilActual && (
           <div
             style={{
-              marginBottom: "25px",
-              padding: "20px",
-              borderRadius: "18px",
-              background: "#f8fafc",
-              border:
-                "1px solid #e2e8f0",
+              background: "#f3f6fa",
+              borderRadius: 14,
+              padding: 16,
+              marginTop: 12,
+              marginBottom: 16,
             }}
           >
             <h3
               style={{
                 marginTop: 0,
-                color: "#172033",
-                fontSize: "22px",
+                marginBottom: 12,
               }}
             >
               🚛 Perfil del vehículo
             </h3>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns:
-                  "1fr 1fr",
-                gap: "16px",
-              }}
-            >
+            <div style={gridStyle}>
               <div>
                 <strong>Largo</strong>
                 <br />
-                {perfilActual.largo}
+                {perfilActual.largo} m
               </div>
 
               <div>
                 <strong>Ancho</strong>
                 <br />
-                {perfilActual.ancho}
+                {perfilActual.ancho} m
               </div>
 
               <div>
                 <strong>Altura</strong>
                 <br />
-                {perfilActual.altura}
+                {perfilActual.altura} m
               </div>
 
               <div>
                 <strong>Peso</strong>
                 <br />
-                {perfilActual.peso}
+                {perfilActual.peso} t
               </div>
 
               <div>
@@ -586,41 +647,26 @@ export default function CamioneroAR() {
               </div>
 
               <div>
-                <strong>
-                  Consumo sugerido
-                </strong>
+                <strong>Consumo sugerido</strong>
                 <br />
                 {perfilActual.consumo} L/100 km
               </div>
             </div>
           </div>
-        )}
 
-        <label
-          htmlFor="consumo"
-          style={{
-            display: "block",
-            fontWeight: "bold",
-            fontSize: "18px",
-            marginBottom: "8px",
-            color: "#172033",
-          }}
-        >
-          Consumo del vehículo
-        </label>
+          <label
+            style={{
+              display: "block",
+              fontWeight: 700,
+              marginBottom: 6,
+            }}
+          >
+            Consumo del vehículo
+          </label>
 
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            marginBottom: "20px",
-          }}
-        >
           <input
-            id="consumo"
             type="number"
-            min="0.1"
+            min="1"
             step="0.1"
             value={consumo}
             onChange={(e) =>
@@ -628,60 +674,20 @@ export default function CamioneroAR() {
                 Number(e.target.value)
               )
             }
-            style={{
-              flex: 1,
-              boxSizing: "border-box",
-              padding: "16px",
-              borderRadius: "12px",
-              border:
-                "1px solid #cbd5e1",
-              fontSize: "17px",
-            }}
+            style={inputStyle}
           />
 
-          <span
+          <label
             style={{
-              fontSize: "16px",
-              color: "#475569",
-              whiteSpace: "nowrap",
+              display: "block",
+              fontWeight: 700,
+              marginBottom: 6,
             }}
           >
-            L/100 km
-          </span>
-        </div>
-
-        <label
-          htmlFor="precio"
-          style={{
-            display: "block",
-            fontWeight: "bold",
-            fontSize: "18px",
-            marginBottom: "8px",
-            color: "#172033",
-          }}
-        >
-          Precio del gasoil
-        </label>
-
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "10px",
-            marginBottom: "25px",
-          }}
-        >
-          <span
-            style={{
-              fontSize: "18px",
-              color: "#475569",
-            }}
-          >
-            $
-          </span>
+            Precio del gasoil
+          </label>
 
           <input
-            id="precio"
             type="number"
             min="1"
             step="1"
@@ -691,272 +697,343 @@ export default function CamioneroAR() {
                 Number(e.target.value)
               )
             }
-            style={{
-              flex: 1,
-              boxSizing: "border-box",
-              padding: "16px",
-              borderRadius: "12px",
-              border:
-                "1px solid #cbd5e1",
-              fontSize: "17px",
-            }}
+            style={inputStyle}
           />
 
-          <span
+          <button
+            onClick={planificarRuta}
+            disabled={loading}
             style={{
-              fontSize: "16px",
-              color: "#475569",
-              whiteSpace: "nowrap",
+              width: "100%",
+              border: 0,
+              borderRadius: 14,
+              padding: "16px",
+              background: loading
+                ? "#9ca3af"
+                : "#172033",
+              color: "white",
+              fontSize: 18,
+              fontWeight: 800,
+              cursor: loading
+                ? "default"
+                : "pointer",
+              marginTop: 8,
             }}
           >
-            por litro
-          </span>
-        </div>
+            {loading
+              ? "Calculando ruta..."
+              : "Planificar ruta"}
+          </button>
 
-        <button
-          type="button"
-          onClick={planificarRuta}
-          disabled={cargando}
-          style={{
-            width: "100%",
-            padding: "18px",
-            borderRadius: "14px",
-            border: "none",
-            background: cargando
-              ? "#94a3b8"
-              : "#172033",
-            color: "#ffffff",
-            fontSize: "19px",
-            fontWeight: "bold",
-            cursor: cargando
-              ? "not-allowed"
-              : "pointer",
-            marginBottom: "20px",
-          }}
-        >
-          {cargando
-            ? "Calculando ruta..."
-            : "Planificar ruta"}
-        </button>
-
-        {error && (
-          <div
-            style={{
-              padding: "18px",
-              borderRadius: "14px",
-              background: "#fef2f2",
-              border:
-                "1px solid #fecaca",
-              color: "#991b1b",
-              marginBottom: "20px",
-              lineHeight: 1.5,
-            }}
-          >
-            <strong>
-              ⚠️ No se pudo calcular
-            </strong>
-
-            <br />
-
-            {error}
-          </div>
-        )}
+          {error && (
+            <div
+              style={{
+                marginTop: 16,
+                padding: 16,
+                background: "#fee2e2",
+                border:
+                  "1px solid #fecaca",
+                borderRadius: 14,
+                color: "#991b1b",
+                fontWeight: 600,
+              }}
+            >
+              ⚠️ {error}
+            </div>
+          )}
+        </section>
 
         {resultado && (
-          <div
+          <section
             style={{
-              marginTop: "10px",
-              padding: "22px",
-              borderRadius: "18px",
-              background: "#eff6ff",
+              background: "#eef6ff",
               border:
-                "1px solid #bfdbfe",
+                "1px solid #c9ddf5",
+              borderRadius: 20,
+              padding: "28px 20px",
+              marginBottom: 20,
             }}
           >
-            <h3
+            <h2
               style={{
+                fontSize: 28,
                 marginTop: 0,
-                fontSize: "23px",
-                color: "#172033",
+                marginBottom: 24,
               }}
             >
               📍 Resultado de la ruta
-            </h3>
+            </h2>
 
             <div
               style={{
-                display: "grid",
-                gap: "12px",
-                color: "#1e293b",
+                fontSize: 18,
+                lineHeight: 1.55,
               }}
             >
-              <div>
+              <p>
                 <strong>Origen:</strong>{" "}
-                {resultado.origen}
-              </div>
+                {origen}
+              </p>
 
-              <div>
+              <p>
                 <strong>Destino:</strong>{" "}
-                {resultado.destino}
-              </div>
+                {destino}
+              </p>
 
-              <div>
+              <p>
                 <strong>Vehículo:</strong>{" "}
-                {resultado.vehiculo}
-              </div>
+                {perfilActual.nombre}
+              </p>
 
-              <div
-                style={{
-                  fontSize: "20px",
-                }}
-              >
+              <p>
                 <strong>Distancia:</strong>{" "}
                 {formatoNumero(
                   resultado.distanciaKm
                 )}{" "}
                 km
+              </p>
+
+              <p>
+                <strong>Duración:</strong>{" "}
+                {Math.floor(
+                  resultado.duracionMin / 60
+                )}{" "}
+                h{" "}
+                {Math.round(
+                  resultado.duracionMin % 60
+                )}{" "}
+                min
+              </p>
+            </div>
+
+            <hr
+              style={{
+                border: 0,
+                borderTop:
+                  "1px solid #cbd9e8",
+                margin: "24px 0",
+              }}
+            />
+
+            <h2
+              style={{
+                fontSize: 27,
+                marginBottom: 20,
+              }}
+            >
+              ⛽ Estimación de combustible
+            </h2>
+
+            <div
+              style={{
+                fontSize: 18,
+                lineHeight: 1.6,
+              }}
+            >
+              <p>
+                <strong>
+                  Distancia ida y vuelta:
+                </strong>{" "}
+                {formatoNumero(
+                  distanciaIdaVuelta
+                )}{" "}
+                km
+              </p>
+
+              <p>
+                <strong>Consumo:</strong>{" "}
+                {formatoNumero(consumo)}{" "}
+                L/100 km
+              </p>
+
+              <p>
+                <strong>
+                  Litros estimados:
+                </strong>{" "}
+                {formatoNumero(
+                  litrosEstimados
+                )}{" "}
+                L
+              </p>
+
+              <p>
+                <strong>
+                  Precio gasoil:
+                </strong>{" "}
+                {formatoDinero(
+                  precioGasoil
+                )}{" "}
+                / L
+              </p>
+            </div>
+
+            <div
+              style={{
+                background: "white",
+                borderRadius: 16,
+                padding: "20px",
+                marginTop: 20,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 22,
+                  fontWeight: 800,
+                }}
+              >
+                💰 Costo estimado:
               </div>
 
               <div
                 style={{
-                  fontSize: "20px",
+                  fontSize: 32,
+                  fontWeight: 900,
+                  marginTop: 4,
                 }}
               >
-                <strong>Duración:</strong>{" "}
-                {formatoDuracion(
-                  resultado.duracionMinutos
+                {formatoDinero(
+                  costoEstimado
                 )}
               </div>
             </div>
 
-            <div
-              style={{
-                marginTop: "22px",
-                paddingTop: "20px",
-                borderTop:
-                  "1px solid #bfdbfe",
-              }}
-            >
-              <h3
-                style={{
-                  marginTop: 0,
-                  fontSize: "23px",
-                  color: "#172033",
-                }}
-              >
-                ⛽ Estimación de combustible
-              </h3>
-
+            {evaluacion && (
               <div
                 style={{
-                  display: "grid",
-                  gap: "12px",
-                  color: "#1e293b",
+                  marginTop: 22,
+                  background:
+                    colorEstado(
+                      evaluacion.estado
+                    ),
+                  borderRadius: 16,
+                  padding: 20,
                 }}
               >
-                <div>
-                  <strong>
-                    Distancia ida y vuelta:
-                  </strong>{" "}
-                  {formatoNumero(
-                    distanciaIdaVuelta
-                  )}{" "}
-                  km
-                </div>
-
-                <div>
-                  <strong>
-                    Consumo:
-                  </strong>{" "}
-                  {formatoNumero(consumo)}{" "}
-                  L/100 km
-                </div>
+                <h2
+                  style={{
+                    marginTop: 0,
+                    fontSize: 23,
+                  }}
+                >
+                  ⚖️ Evaluación del vehículo
+                </h2>
 
                 <div
                   style={{
-                    fontSize: "20px",
+                    fontSize: 22,
+                    fontWeight: 900,
+                    marginBottom: 16,
                   }}
                 >
-                  <strong>
-                    Litros estimados:
-                  </strong>{" "}
-                  {formatoNumero(
-                    litrosEstimados
-                  )}{" "}
-                  L
-                </div>
-
-                <div>
-                  <strong>
-                    Precio gasoil:
-                  </strong>{" "}
-                  {formatoPesos(
-                    precioGasoil
-                  )}{" "}
-                  / L
-                </div>
-
-                <div
-                  style={{
-                    marginTop: "8px",
-                    padding: "16px",
-                    borderRadius: "12px",
-                    background: "#ffffff",
-                    fontSize: "23px",
-                    fontWeight: "bold",
-                    color: "#172033",
-                  }}
-                >
-                  💰 Costo estimado:
-                  <br />
-                  {formatoPesos(
-                    costoEstimado
+                  {textoEstado(
+                    evaluacion.estado
                   )}
                 </div>
+
+                <ul
+                  style={{
+                    margin: 0,
+                    paddingLeft: 22,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  {evaluacion.observaciones.map(
+                    (observacion, index) => (
+                      <li key={index}>
+                        {observacion}
+                      </li>
+                    )
+                  )}
+                </ul>
               </div>
-            </div>
+            )}
 
             <div
               style={{
-                marginTop: "20px",
-                padding: "15px",
-                borderRadius: "12px",
-                background: "#fffbeb",
+                marginTop: 20,
+                background: "#fffbea",
                 border:
-                  "1px solid #fde68a",
-                color: "#92400e",
-                fontSize: "14px",
-                lineHeight: 1.5,
+                  "1px solid #f5df86",
+                borderRadius: 16,
+                padding: 18,
+                color: "#7c4a03",
+                lineHeight: 1.55,
               }}
             >
-              ⚠️ <strong>Importante:</strong>{" "}
-              esta versión calcula una ruta
-              vial mediante servicios de
-              mapas. Todavía no verifica
-              restricciones legales específicas
-              para transporte pesado, puentes,
-              peso por eje, altura, permisos,
-              horarios o corredores habilitados.
+              <strong>
+                ⚠️ Importante
+              </strong>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                }}
+              >
+                Esta versión calcula una ruta
+                vial mediante servicios de mapas
+                y realiza una primera evaluación
+                de las dimensiones generales del
+                vehículo.
+              </p>
+
+              <p>
+                Todavía no verifica las
+                restricciones específicas de cada
+                tramo: puentes, peso por eje,
+                horarios, corredores habilitados,
+                permisos, restricciones locales
+                o condiciones particulares de la
+                infraestructura.
+              </p>
+
+              <p
+                style={{
+                  marginBottom: 0,
+                  fontWeight: 700,
+                }}
+              >
+                Por eso “RUTA NO VERIFICADA” no
+                significa que la ruta esté
+                prohibida: significa que todavía
+                falta comprobarla contra nuestra
+                base de restricciones.
+              </p>
             </div>
-          </div>
+          </section>
         )}
 
-        <div
+        <footer
           style={{
-            marginTop: "30px",
-            paddingTop: "20px",
-            borderTop:
-              "1px solid #e5e7eb",
-            fontSize: "13px",
-            color: "#64748b",
-            lineHeight: 1.5,
             textAlign: "center",
+            color: "#6b7280",
+            fontSize: 14,
+            paddingTop: 10,
           }}
         >
           Camionero AR · Planificación de
           transporte pesado en Argentina
-        </div>
+        </footer>
       </div>
     </main>
   );
 }
+
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "14px",
+  borderRadius: 12,
+  border: "1px solid #cbd5e1",
+  fontSize: 16,
+  marginBottom: 16,
+  background: "white",
+  color: "#172033",
+};
+
+const gridStyle: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns:
+    "repeat(2, minmax(0, 1fr))",
+  gap: 12,
+  lineHeight: 1.5,
+};
