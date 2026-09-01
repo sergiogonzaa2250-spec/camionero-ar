@@ -13,6 +13,7 @@ type PerfilVehiculo = {
   altura: string;
   peso: string;
   ejes: string;
+  consumoBase: number;
 };
 
 type ResultadoRuta = {
@@ -30,6 +31,7 @@ const perfiles: Record<string, PerfilVehiculo> = {
     altura: "4.1 m",
     peso: "30 t",
     ejes: "3",
+    consumoBase: 28,
   },
 
   "Camión con acoplado": {
@@ -38,6 +40,7 @@ const perfiles: Record<string, PerfilVehiculo> = {
     altura: "4.1 m",
     peso: "45 t",
     ejes: "6",
+    consumoBase: 35,
   },
 
   "Camión con semirremolque": {
@@ -46,6 +49,7 @@ const perfiles: Record<string, PerfilVehiculo> = {
     altura: "4.1 m",
     peso: "45 t",
     ejes: "5",
+    consumoBase: 32,
   },
 
   Bitren: {
@@ -54,6 +58,7 @@ const perfiles: Record<string, PerfilVehiculo> = {
     altura: "4.3 m",
     peso: "75 t",
     ejes: "9",
+    consumoBase: 40,
   },
 };
 
@@ -68,6 +73,15 @@ export default function CamioneroAR() {
 
   const [vehiculo, setVehiculo] = useState("Camión");
 
+  const [consumo, setConsumo] = useState(
+    String(perfiles["Camión"].consumoBase)
+  );
+
+  const [precioCombustible, setPrecioCombustible] =
+    useState("1500");
+
+  const [idaVuelta, setIdaVuelta] = useState(false);
+
   const [resultado, setResultado] =
     useState<ResultadoRuta | null>(null);
 
@@ -75,16 +89,25 @@ export default function CamioneroAR() {
 
   const [cargando, setCargando] = useState(false);
 
-  async function buscarLugar(lugar: string): Promise<Coordenadas> {
+  function cambiarVehiculo(nuevoVehiculo: string) {
+    setVehiculo(nuevoVehiculo);
+
+    const perfil = perfiles[nuevoVehiculo];
+
+    if (perfil) {
+      setConsumo(String(perfil.consumoBase));
+    }
+  }
+
+  async function buscarLugar(
+    lugar: string
+  ): Promise<Coordenadas> {
     const texto = lugar.trim();
 
     if (!texto) {
       throw new Error("Ingresá una ubicación.");
     }
 
-    /*
-     * Primero intentamos Photon.
-     */
     try {
       const photonUrl =
         "https://photon.komoot.io/api/?" +
@@ -117,14 +140,9 @@ export default function CamioneroAR() {
         }
       }
     } catch {
-      /*
-       * Si Photon falla, seguimos con Nominatim.
-       */
+      // Intentamos con Nominatim.
     }
 
-    /*
-     * Segundo intento: Nominatim / OpenStreetMap.
-     */
     try {
       const nominatimUrl =
         "https://nominatim.openstreetmap.org/search?" +
@@ -136,7 +154,9 @@ export default function CamioneroAR() {
           "accept-language": "es",
         }).toString();
 
-      const respuesta = await fetch(nominatimUrl);
+      const respuesta = await fetch(
+        nominatimUrl
+      );
 
       if (respuesta.ok) {
         const datos = await respuesta.json();
@@ -145,8 +165,12 @@ export default function CamioneroAR() {
 
         if (
           lugarEncontrado &&
-          Number.isFinite(Number(lugarEncontrado.lon)) &&
-          Number.isFinite(Number(lugarEncontrado.lat))
+          Number.isFinite(
+            Number(lugarEncontrado.lon)
+          ) &&
+          Number.isFinite(
+            Number(lugarEncontrado.lat)
+          )
         ) {
           return {
             lon: Number(lugarEncontrado.lon),
@@ -155,9 +179,7 @@ export default function CamioneroAR() {
         }
       }
     } catch {
-      /*
-       * Se maneja abajo con un mensaje claro.
-       */
+      // Se informa el error abajo.
     }
 
     throw new Error(
@@ -224,10 +246,14 @@ export default function CamioneroAR() {
 
     return {
       distanciaKm:
-        Math.round((Number(ruta.distance) / 1000) * 10) / 10,
+        Math.round(
+          (Number(ruta.distance) / 1000) * 10
+        ) / 10,
 
       duracionMinutos:
-        Math.round(Number(ruta.duration) / 60),
+        Math.round(
+          Number(ruta.duration) / 60
+        ),
     };
   }
 
@@ -244,16 +270,48 @@ export default function CamioneroAR() {
       return;
     }
 
+    const consumoNumero = Number(
+      consumo.replace(",", ".")
+    );
+
+    const precioNumero = Number(
+      precioCombustible.replace(",", ".")
+    );
+
+    if (
+      !Number.isFinite(consumoNumero) ||
+      consumoNumero <= 0
+    ) {
+      setError(
+        "Ingresá un consumo válido en litros cada 100 km."
+      );
+      setResultado(null);
+      return;
+    }
+
+    if (
+      !Number.isFinite(precioNumero) ||
+      precioNumero <= 0
+    ) {
+      setError(
+        "Ingresá un precio de combustible válido."
+      );
+      setResultado(null);
+      return;
+    }
+
     setCargando(true);
     setError("");
     setResultado(null);
 
     try {
-      const [origenCoords, destinoCoords] =
-        await Promise.all([
-          buscarLugar(origen),
-          buscarLugar(destino),
-        ]);
+      const [
+        origenCoords,
+        destinoCoords,
+      ] = await Promise.all([
+        buscarLugar(origen),
+        buscarLugar(destino),
+      ]);
 
       const ruta = await calcularRuta(
         origenCoords,
@@ -265,7 +323,8 @@ export default function CamioneroAR() {
         destino,
         vehiculo,
         distanciaKm: ruta.distanciaKm,
-        duracionMinutos: ruta.duracionMinutos,
+        duracionMinutos:
+          ruta.duracionMinutos,
       });
     } catch (e) {
       if (e instanceof Error) {
@@ -280,9 +339,15 @@ export default function CamioneroAR() {
     }
   }
 
-  function formatoDuracion(minutos: number) {
-    const horas = Math.floor(minutos / 60);
-    const minutosRestantes = minutos % 60;
+  function formatoDuracion(
+    minutos: number
+  ) {
+    const horas = Math.floor(
+      minutos / 60
+    );
+
+    const minutosRestantes =
+      minutos % 60;
 
     if (horas === 0) {
       return `${minutosRestantes} min`;
@@ -295,7 +360,58 @@ export default function CamioneroAR() {
     return `${horas} h ${minutosRestantes} min`;
   }
 
+  function calcularCombustible() {
+    if (!resultado) {
+      return null;
+    }
+
+    const consumoNumero = Number(
+      consumo.replace(",", ".")
+    );
+
+    const precioNumero = Number(
+      precioCombustible.replace(",", ".")
+    );
+
+    if (
+      !Number.isFinite(consumoNumero) ||
+      consumoNumero <= 0 ||
+      !Number.isFinite(precioNumero) ||
+      precioNumero <= 0
+    ) {
+      return null;
+    }
+
+    const distanciaTotal =
+      idaVuelta
+        ? resultado.distanciaKm * 2
+        : resultado.distanciaKm;
+
+    const litros =
+      distanciaTotal *
+      consumoNumero /
+      100;
+
+    const costo =
+      litros *
+      precioNumero;
+
+    return {
+      distanciaTotal:
+        Math.round(distanciaTotal * 10) / 10,
+
+      litros:
+        Math.round(litros * 10) / 10,
+
+      costo:
+        Math.round(costo),
+    };
+  }
+
   const perfil = perfiles[vehiculo];
+
+  const combustible =
+    calcularCombustible();
 
   return (
     <main
@@ -442,7 +558,9 @@ export default function CamioneroAR() {
           id="vehiculo"
           value={vehiculo}
           onChange={(e) =>
-            setVehiculo(e.target.value)
+            cambiarVehiculo(
+              e.target.value
+            )
           }
           style={{
             width: "100%",
@@ -457,12 +575,15 @@ export default function CamioneroAR() {
           }}
         >
           <option>Camión</option>
+
           <option>
             Camión con acoplado
           </option>
+
           <option>
             Camión con semirremolque
           </option>
+
           <option>Bitren</option>
         </select>
 
@@ -528,6 +649,125 @@ export default function CamioneroAR() {
             </div>
           </div>
         )}
+
+        <div
+          style={{
+            marginBottom: "25px",
+            padding: "20px",
+            borderRadius: "18px",
+            background: "#f8fafc",
+            border:
+              "1px solid #e2e8f0",
+          }}
+        >
+          <h3
+            style={{
+              marginTop: 0,
+              marginBottom: "18px",
+              color: "#172033",
+              fontSize: "22px",
+            }}
+          >
+            ⛽ Combustible
+          </h3>
+
+          <label
+            htmlFor="consumo"
+            style={{
+              display: "block",
+              fontWeight: "bold",
+              fontSize: "16px",
+              marginBottom: "8px",
+              color: "#172033",
+            }}
+          >
+            Consumo (L/100 km)
+          </label>
+
+          <input
+            id="consumo"
+            type="number"
+            min="1"
+            step="0.1"
+            value={consumo}
+            onChange={(e) =>
+              setConsumo(e.target.value)
+            }
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "14px",
+              borderRadius: "12px",
+              border:
+                "1px solid #cbd5e1",
+              fontSize: "17px",
+              marginBottom: "18px",
+            }}
+          />
+
+          <label
+            htmlFor="precio"
+            style={{
+              display: "block",
+              fontWeight: "bold",
+              fontSize: "16px",
+              marginBottom: "8px",
+              color: "#172033",
+            }}
+          >
+            Precio del combustible ($/L)
+          </label>
+
+          <input
+            id="precio"
+            type="number"
+            min="1"
+            step="1"
+            value={precioCombustible}
+            onChange={(e) =>
+              setPrecioCombustible(
+                e.target.value
+              )
+            }
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "14px",
+              borderRadius: "12px",
+              border:
+                "1px solid #cbd5e1",
+              fontSize: "17px",
+              marginBottom: "18px",
+            }}
+          />
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              fontSize: "17px",
+              color: "#172033",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={idaVuelta}
+              onChange={(e) =>
+                setIdaVuelta(
+                  e.target.checked
+                )
+              }
+              style={{
+                width: "20px",
+                height: "20px",
+              }}
+            />
+
+            Calcular ida y vuelta
+          </label>
+        </div>
 
         <button
           onClick={planificarRuta}
@@ -637,6 +877,89 @@ export default function CamioneroAR() {
               )}
             </p>
 
+            {combustible && (
+              <div
+                style={{
+                  marginTop: "25px",
+                  padding: "20px",
+                  borderRadius: "16px",
+                  background: "#ecfdf5",
+                  border:
+                    "1px solid #a7f3d0",
+                }}
+              >
+                <h3
+                  style={{
+                    marginTop: 0,
+                    color: "#065f46",
+                    fontSize: "22px",
+                  }}
+                >
+                  ⛽ Estimación de combustible
+                </h3>
+
+                <p
+                  style={{
+                    fontSize: "17px",
+                  }}
+                >
+                  <strong>
+                    Distancia calculada:
+                  </strong>{" "}
+                  {combustible.distanciaTotal} km
+                </p>
+
+                <p
+                  style={{
+                    fontSize: "17px",
+                  }}
+                >
+                  <strong>
+                    Consumo:
+                  </strong>{" "}
+                  {consumo} L/100 km
+                </p>
+
+                <p
+                  style={{
+                    fontSize: "17px",
+                  }}
+                >
+                  <strong>
+                    Litros estimados:
+                  </strong>{" "}
+                  {combustible.litros} L
+                </p>
+
+                <p
+                  style={{
+                    fontSize: "22px",
+                    fontWeight: "bold",
+                    color: "#065f46",
+                  }}
+                >
+                  💰 Costo estimado: $
+                  {combustible.costo.toLocaleString(
+                    "es-AR"
+                  )}
+                </p>
+
+                <p
+                  style={{
+                    marginBottom: 0,
+                    fontSize: "13px",
+                    color: "#065f46",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  El cálculo es una estimación
+                  matemática basada en la distancia
+                  de la ruta, el consumo ingresado
+                  y el precio indicado.
+                </p>
+              </div>
+            )}
+
             <div
               style={{
                 marginTop: "20px",
@@ -650,10 +973,8 @@ export default function CamioneroAR() {
             >
               ⚠️ La ruta calculada es una
               estimación vial. El perfil del
-              vehículo se muestra como
-              referencia, pero todavía no
-              modifica automáticamente el
-              trazado.
+              vehículo todavía no modifica
+              automáticamente el trazado.
 
               <br />
               <br />
@@ -662,8 +983,8 @@ export default function CamioneroAR() {
               restricciones específicas para
               transporte pesado, peso por eje,
               altura máxima, puentes, peajes,
-              tránsito, permisos ni
-              restricciones legales.
+              tránsito, permisos ni restricciones
+              legales.
             </div>
           </div>
         )}
