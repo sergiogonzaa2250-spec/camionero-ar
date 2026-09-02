@@ -2,6 +2,11 @@
 
 import { useState } from "react";
 
+import {
+  evaluarRestricciones,
+  EvaluacionRestricciones,
+} from "../lib/motorRestricciones";
+
 type Coordenadas = {
   lon: number;
   lat: number;
@@ -94,7 +99,9 @@ export default function Home() {
   );
 
   const [consumo, setConsumo] = useState(32);
-  const [precioGasoil, setPrecioGasoil] = useState(1500);
+
+  const [precioGasoil, setPrecioGasoil] =
+    useState(1500);
 
   const [resultado, setResultado] =
     useState<ResultadoRuta | null>(null);
@@ -102,8 +109,17 @@ export default function Home() {
   const [evaluacion, setEvaluacion] =
     useState<EvaluacionVehiculo | null>(null);
 
+  const [
+    evaluacionRestricciones,
+    setEvaluacionRestricciones,
+  ] = useState<EvaluacionRestricciones | null>(
+    null
+  );
+
   const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+
+  const [loading, setLoading] =
+    useState(false);
 
   function cambiarVehiculo(valor: string) {
     setVehiculo(valor);
@@ -150,10 +166,18 @@ export default function Home() {
       );
     }
 
-    const lat = Number(lugarEncontrado.lat);
-    const lon = Number(lugarEncontrado.lon);
+    const lat = Number(
+      lugarEncontrado.lat
+    );
 
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    const lon = Number(
+      lugarEncontrado.lon
+    );
+
+    if (
+      !Number.isFinite(lat) ||
+      !Number.isFinite(lon)
+    ) {
       throw new Error(
         `La ubicación encontrada no tiene coordenadas válidas: ${texto}`
       );
@@ -169,16 +193,6 @@ export default function Home() {
     origenCoord: Coordenadas,
     destinoCoord: Coordenadas
   ): Promise<ResultadoRuta> {
-    /*
-      overview=full:
-      solicita la geometría completa de la ruta.
-
-      geometries=geojson:
-      devuelve la geometría en formato GeoJSON,
-      que después podremos utilizar para mapas
-      y para cruzarla con nuestra base de restricciones.
-    */
-
     const url =
       `https://router.project-osrm.org/route/v1/driving/` +
       `${origenCoord.lon},${origenCoord.lat};` +
@@ -210,7 +224,9 @@ export default function Home() {
     if (
       !ruta.geometry ||
       ruta.geometry.type !== "LineString" ||
-      !Array.isArray(ruta.geometry.coordinates) ||
+      !Array.isArray(
+        ruta.geometry.coordinates
+      ) ||
       ruta.geometry.coordinates.length < 2
     ) {
       throw new Error(
@@ -218,32 +234,46 @@ export default function Home() {
       );
     }
 
-    const coordenadasValidas: [number, number][] =
+    const coordenadasValidas:
+      [number, number][] =
       ruta.geometry.coordinates
         .filter(
-          (punto: unknown): punto is [number, number] =>
+          (
+            punto: unknown
+          ): punto is [number, number] =>
             Array.isArray(punto) &&
             punto.length >= 2 &&
-            Number.isFinite(Number(punto[0])) &&
-            Number.isFinite(Number(punto[1]))
+            Number.isFinite(
+              Number(punto[0])
+            ) &&
+            Number.isFinite(
+              Number(punto[1])
+            )
         )
         .map((punto) => [
           Number(punto[0]),
           Number(punto[1]),
         ]);
 
-    if (coordenadasValidas.length < 2) {
+    if (
+      coordenadasValidas.length < 2
+    ) {
       throw new Error(
         "La geometría recibida no contiene suficientes puntos válidos."
       );
     }
 
     return {
-      distanciaKm: ruta.distance / 1000,
-      duracionMin: ruta.duration / 60,
+      distanciaKm:
+        ruta.distance / 1000,
+
+      duracionMin:
+        ruta.duration / 60,
+
       geometria: {
         type: "LineString",
-        coordinates: coordenadasValidas,
+        coordinates:
+          coordenadasValidas,
       },
     };
   }
@@ -251,12 +281,14 @@ export default function Home() {
   function evaluarVehiculo(): EvaluacionVehiculo {
     const perfil = perfiles[vehiculo];
 
-    const observaciones: string[] = [];
+    const observaciones: string[] =
+      [];
 
     let estado: EstadoRestriccion =
       "COMPATIBLE";
 
     const limiteAncho = 2.6;
+
     const limiteAltura = 4.3;
 
     let limiteLargo = 0;
@@ -282,7 +314,10 @@ export default function Home() {
         limiteLargo = 20.5;
     }
 
-    if (perfil.largo > limiteLargo) {
+    if (
+      perfil.largo >
+      limiteLargo
+    ) {
       estado = "EXCEDE";
 
       observaciones.push(
@@ -296,11 +331,16 @@ export default function Home() {
       observaciones.push(
         `Largo: ${perfil.largo.toFixed(
           2
-        )} m / límite general: ${limiteLargo.toFixed(2)} m.`
+        )} m / límite general: ${limiteLargo.toFixed(
+          2
+        )} m.`
       );
     }
 
-    if (perfil.ancho > limiteAncho) {
+    if (
+      perfil.ancho >
+      limiteAncho
+    ) {
       estado = "EXCEDE";
 
       observaciones.push(
@@ -314,11 +354,16 @@ export default function Home() {
       observaciones.push(
         `Ancho: ${perfil.ancho.toFixed(
           2
-        )} m / límite general: ${limiteAncho.toFixed(2)} m.`
+        )} m / límite general: ${limiteAncho.toFixed(
+          2
+        )} m.`
       );
     }
 
-    if (perfil.altura > limiteAltura) {
+    if (
+      perfil.altura >
+      limiteAltura
+    ) {
       estado = "EXCEDE";
 
       observaciones.push(
@@ -332,12 +377,16 @@ export default function Home() {
       observaciones.push(
         `Altura: ${perfil.altura.toFixed(
           2
-        )} m / límite general: ${limiteAltura.toFixed(2)} m.`
+        )} m / límite general: ${limiteAltura.toFixed(
+          2
+        )} m.`
       );
     }
 
     if (perfil.peso > 45) {
-      if (vehiculo !== "bitren") {
+      if (
+        vehiculo !== "bitren"
+      ) {
         estado = "EXCEDE";
 
         observaciones.push(
@@ -354,7 +403,9 @@ export default function Home() {
       );
     }
 
-    if (estado === "COMPATIBLE") {
+    if (
+      estado === "COMPATIBLE"
+    ) {
       estado = "NO_VERIFICADA";
 
       observaciones.push(
@@ -370,8 +421,15 @@ export default function Home() {
 
   async function planificarRuta() {
     setError("");
+
     setResultado(null);
+
     setEvaluacion(null);
+
+    setEvaluacionRestricciones(
+      null
+    );
+
     setLoading(true);
 
     try {
@@ -388,7 +446,9 @@ export default function Home() {
       }
 
       if (
-        !Number.isFinite(consumo) ||
+        !Number.isFinite(
+          consumo
+        ) ||
         consumo <= 0
       ) {
         throw new Error(
@@ -397,7 +457,9 @@ export default function Home() {
       }
 
       if (
-        !Number.isFinite(precioGasoil) ||
+        !Number.isFinite(
+          precioGasoil
+        ) ||
         precioGasoil <= 0
       ) {
         throw new Error(
@@ -405,22 +467,50 @@ export default function Home() {
         );
       }
 
-      const [origenCoord, destinoCoord] =
-        await Promise.all([
-          buscarLugar(origen),
-          buscarLugar(destino),
-        ]);
-
-      const ruta = await calcularRuta(
+      const [
         origenCoord,
-        destinoCoord
-      );
+        destinoCoord,
+      ] = await Promise.all([
+        buscarLugar(origen),
+        buscarLugar(destino),
+      ]);
+
+      const ruta =
+        await calcularRuta(
+          origenCoord,
+          destinoCoord
+        );
 
       const evaluacionVehiculo =
         evaluarVehiculo();
 
+      const puntosRuta =
+        ruta.geometria.coordinates.map(
+          ([lon, lat]) => ({
+            lat,
+            lon,
+          })
+        );
+
+      const evaluacionDeRestricciones =
+        evaluarRestricciones(
+          puntosRuta,
+          vehiculo as
+            | "camion"
+            | "camionAcoplado"
+            | "camionSemirremolque"
+            | "bitren"
+        );
+
       setResultado(ruta);
-      setEvaluacion(evaluacionVehiculo);
+
+      setEvaluacion(
+        evaluacionVehiculo
+      );
+
+      setEvaluacionRestricciones(
+        evaluacionDeRestricciones
+      );
     } catch (err) {
       if (err instanceof Error) {
         setError(err.message);
@@ -434,44 +524,65 @@ export default function Home() {
     }
   }
 
-  const perfilActual = perfiles[vehiculo];
+  const perfilActual =
+    perfiles[vehiculo];
 
-  const distanciaIdaVuelta = resultado
-    ? resultado.distanciaKm * 2
-    : 0;
+  const distanciaIdaVuelta =
+    resultado
+      ? resultado.distanciaKm * 2
+      : 0;
 
-  const litrosEstimados = resultado
-    ? (distanciaIdaVuelta * consumo) / 100
-    : 0;
+  const litrosEstimados =
+    resultado
+      ? (distanciaIdaVuelta *
+          consumo) /
+        100
+      : 0;
 
   const costoEstimado =
-    litrosEstimados * precioGasoil;
+    litrosEstimados *
+    precioGasoil;
 
   const cantidadPuntosRuta =
-    resultado?.geometria.coordinates.length ?? 0;
+    resultado?.geometria.coordinates
+      .length ?? 0;
 
-  function formatoNumero(numero: number) {
-    return new Intl.NumberFormat("es-AR", {
-      maximumFractionDigits: 1,
-    }).format(numero);
+  function formatoNumero(
+    numero: number
+  ) {
+    return new Intl.NumberFormat(
+      "es-AR",
+      {
+        maximumFractionDigits: 1,
+      }
+    ).format(numero);
   }
 
-  function formatoDinero(numero: number) {
-    return new Intl.NumberFormat("es-AR", {
-      style: "currency",
-      currency: "ARS",
-      maximumFractionDigits: 0,
-    }).format(numero);
+  function formatoDinero(
+    numero: number
+  ) {
+    return new Intl.NumberFormat(
+      "es-AR",
+      {
+        style: "currency",
+        currency: "ARS",
+        maximumFractionDigits: 0,
+      }
+    ).format(numero);
   }
 
   function textoEstado(
     estado: EstadoRestriccion
   ) {
-    if (estado === "COMPATIBLE") {
+    if (
+      estado === "COMPATIBLE"
+    ) {
       return "🟢 COMPATIBLE";
     }
 
-    if (estado === "EXCEDE") {
+    if (
+      estado === "EXCEDE"
+    ) {
       return "🔴 EXCEDE LÍMITES";
     }
 
@@ -481,11 +592,63 @@ export default function Home() {
   function colorEstado(
     estado: EstadoRestriccion
   ) {
-    if (estado === "COMPATIBLE") {
+    if (
+      estado === "COMPATIBLE"
+    ) {
       return "#dcfce7";
     }
 
-    if (estado === "EXCEDE") {
+    if (
+      estado === "EXCEDE"
+    ) {
+      return "#fee2e2";
+    }
+
+    return "#f3f4f6";
+  }
+
+  function textoEstadoRestricciones(
+    estado: string
+  ) {
+    if (
+      estado === "VERIFICADA"
+    ) {
+      return "🟢 RESTRICCIONES VERIFICADAS";
+    }
+
+    if (
+      estado === "CONDICIONAL"
+    ) {
+      return "🟡 RESTRICCIÓN CONDICIONAL";
+    }
+
+    if (
+      estado === "INCOMPATIBLE"
+    ) {
+      return "🔴 INCOMPATIBLE";
+    }
+
+    return "⚪ INFORMACIÓN INSUFICIENTE";
+  }
+
+  function colorEstadoRestricciones(
+    estado: string
+  ) {
+    if (
+      estado === "VERIFICADA"
+    ) {
+      return "#dcfce7";
+    }
+
+    if (
+      estado === "CONDICIONAL"
+    ) {
+      return "#fef3c7";
+    }
+
+    if (
+      estado === "INCOMPATIBLE"
+    ) {
       return "#fee2e2";
     }
 
@@ -497,7 +660,8 @@ export default function Home() {
       style={{
         minHeight: "100vh",
         background: "#f5f7fb",
-        padding: "24px 16px 60px",
+        padding:
+          "24px 16px 60px",
         color: "#172033",
       }}
     >
@@ -529,8 +693,8 @@ export default function Home() {
               fontSize: 16,
             }}
           >
-            Planificación de transporte pesado
-            en Argentina
+            Planificación de transporte
+            pesado en Argentina
           </p>
         </header>
 
@@ -566,7 +730,9 @@ export default function Home() {
           <input
             value={origen}
             onChange={(e) =>
-              setOrigen(e.target.value)
+              setOrigen(
+                e.target.value
+              )
             }
             placeholder="Ej.: Campana, Buenos Aires"
             style={inputStyle}
@@ -585,7 +751,9 @@ export default function Home() {
           <input
             value={destino}
             onChange={(e) =>
-              setDestino(e.target.value)
+              setDestino(
+                e.target.value
+              )
             }
             placeholder="Ej.: Rosario, Santa Fe"
             style={inputStyle}
@@ -604,7 +772,9 @@ export default function Home() {
           <select
             value={vehiculo}
             onChange={(e) =>
-              cambiarVehiculo(e.target.value)
+              cambiarVehiculo(
+                e.target.value
+              )
             }
             style={inputStyle}
           >
@@ -699,7 +869,9 @@ export default function Home() {
             value={consumo}
             onChange={(e) =>
               setConsumo(
-                Number(e.target.value)
+                Number(
+                  e.target.value
+                )
               )
             }
             style={inputStyle}
@@ -722,14 +894,18 @@ export default function Home() {
             value={precioGasoil}
             onChange={(e) =>
               setPrecioGasoil(
-                Number(e.target.value)
+                Number(
+                  e.target.value
+                )
               )
             }
             style={inputStyle}
           />
 
           <button
-            onClick={planificarRuta}
+            onClick={
+              planificarRuta
+            }
             disabled={loading}
             style={{
               width: "100%",
@@ -778,7 +954,8 @@ export default function Home() {
               border:
                 "1px solid #c9ddf5",
               borderRadius: 20,
-              padding: "28px 20px",
+              padding:
+                "28px 20px",
               marginBottom: 20,
             }}
           >
@@ -799,22 +976,30 @@ export default function Home() {
               }}
             >
               <p>
-                <strong>Origen:</strong>{" "}
+                <strong>
+                  Origen:
+                </strong>{" "}
                 {origen}
               </p>
 
               <p>
-                <strong>Destino:</strong>{" "}
+                <strong>
+                  Destino:
+                </strong>{" "}
                 {destino}
               </p>
 
               <p>
-                <strong>Vehículo:</strong>{" "}
+                <strong>
+                  Vehículo:
+                </strong>{" "}
                 {perfilActual.nombre}
               </p>
 
               <p>
-                <strong>Distancia:</strong>{" "}
+                <strong>
+                  Distancia:
+                </strong>{" "}
                 {formatoNumero(
                   resultado.distanciaKm
                 )}{" "}
@@ -822,13 +1007,17 @@ export default function Home() {
               </p>
 
               <p>
-                <strong>Duración:</strong>{" "}
+                <strong>
+                  Duración:
+                </strong>{" "}
                 {Math.floor(
-                  resultado.duracionMin / 60
+                  resultado.duracionMin /
+                    60
                 )}{" "}
                 h{" "}
                 {Math.round(
-                  resultado.duracionMin % 60
+                  resultado.duracionMin %
+                    60
                 )}{" "}
                 min
               </p>
@@ -859,12 +1048,15 @@ export default function Home() {
                   lineHeight: 1.5,
                 }}
               >
-                Recorrido completo capturado
+                Recorrido completo
+                capturado
                 correctamente.
                 <br />
                 Puntos de la ruta:{" "}
                 <strong>
-                  {cantidadPuntosRuta}
+                  {
+                    cantidadPuntosRuta
+                  }
                 </strong>
               </p>
 
@@ -875,10 +1067,11 @@ export default function Home() {
                   fontSize: 14,
                 }}
               >
-                Esta información queda preparada
-                para el futuro mapa y para cruzar
-                la ruta con las restricciones de
-                transporte pesado.
+                La geometría queda
+                preparada para el
+                mapa y para el
+                análisis de
+                restricciones.
               </p>
             </div>
 
@@ -887,7 +1080,8 @@ export default function Home() {
                 border: 0,
                 borderTop:
                   "1px solid #cbd9e8",
-                margin: "24px 0",
+                margin:
+                  "24px 0",
               }}
             />
 
@@ -897,7 +1091,8 @@ export default function Home() {
                 marginBottom: 20,
               }}
             >
-              ⛽ Estimación de combustible
+              ⛽ Estimación de
+              combustible
             </h2>
 
             <div
@@ -908,28 +1103,43 @@ export default function Home() {
             >
               <p>
                 <strong>
-                  Distancia ida y vuelta:
+                  Distancia ida y
+                  vuelta:
                 </strong>{" "}
-                {formatoNumero(distanciaIdaVuelta)} km
+                {formatoNumero(
+                  distanciaIdaVuelta
+                )}{" "}
+                km
               </p>
 
               <p>
-                <strong>Consumo:</strong>{" "}
-                {formatoNumero(consumo)} L/100 km
+                <strong>
+                  Consumo:
+                </strong>{" "}
+                {formatoNumero(
+                  consumo
+                )}{" "}
+                L/100 km
               </p>
 
               <p>
                 <strong>
                   Litros estimados:
                 </strong>{" "}
-                {formatoNumero(litrosEstimados)} L
+                {formatoNumero(
+                  litrosEstimados
+                )}{" "}
+                L
               </p>
 
               <p>
                 <strong>
                   Precio gasoil:
                 </strong>{" "}
-                {formatoDinero(precioGasoil)} / L
+                {formatoDinero(
+                  precioGasoil
+                )}{" "}
+                / L
               </p>
             </div>
 
@@ -957,7 +1167,9 @@ export default function Home() {
                   marginTop: 4,
                 }}
               >
-                {formatoDinero(costoEstimado)}
+                {formatoDinero(
+                  costoEstimado
+                )}
               </div>
             </div>
 
@@ -965,9 +1177,10 @@ export default function Home() {
               <div
                 style={{
                   marginTop: 22,
-                  background: colorEstado(
-                    evaluacion.estado
-                  ),
+                  background:
+                    colorEstado(
+                      evaluacion.estado
+                    ),
                   borderRadius: 16,
                   padding: 20,
                 }}
@@ -978,7 +1191,8 @@ export default function Home() {
                     fontSize: 23,
                   }}
                 >
-                  ⚖️ Evaluación del vehículo
+                  ⚖️ Evaluación del
+                  vehículo
                 </h2>
 
                 <div
@@ -988,7 +1202,9 @@ export default function Home() {
                     marginBottom: 16,
                   }}
                 >
-                  {textoEstado(evaluacion.estado)}
+                  {textoEstado(
+                    evaluacion.estado
+                  )}
                 </div>
 
                 <ul
@@ -999,8 +1215,13 @@ export default function Home() {
                   }}
                 >
                   {evaluacion.observaciones.map(
-                    (observacion, index) => (
-                      <li key={index}>
+                    (
+                      observacion,
+                      index
+                    ) => (
+                      <li
+                        key={index}
+                      >
                         {observacion}
                       </li>
                     )
@@ -1009,33 +1230,259 @@ export default function Home() {
               </div>
             )}
 
+            {evaluacionRestricciones && (
+              <div
+                style={{
+                  marginTop: 22,
+                  background:
+                    colorEstadoRestricciones(
+                      evaluacionRestricciones.estadoGeneral
+                    ),
+                  borderRadius: 16,
+                  padding: 20,
+                }}
+              >
+                <h2
+                  style={{
+                    marginTop: 0,
+                    fontSize: 23,
+                  }}
+                >
+                  🛣️ Restricciones
+                  de la ruta
+                </h2>
+
+                <div
+                  style={{
+                    fontSize: 21,
+                    fontWeight: 900,
+                    marginBottom: 16,
+                  }}
+                >
+                  {textoEstadoRestricciones(
+                    evaluacionRestricciones.estadoGeneral
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns:
+                      "repeat(2, minmax(0, 1fr))",
+                    gap: 10,
+                    marginBottom: 18,
+                  }}
+                >
+                  <div
+                    style={{
+                      background:
+                        "rgba(255,255,255,0.7)",
+                      borderRadius: 12,
+                      padding: 12,
+                    }}
+                  >
+                    <strong>
+                      Verificadas
+                    </strong>
+                    <br />
+                    {
+                      evaluacionRestricciones.cantidadVerificadas
+                    }
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "rgba(255,255,255,0.7)",
+                      borderRadius: 12,
+                      padding: 12,
+                    }}
+                  >
+                    <strong>
+                      Condicionales
+                    </strong>
+                    <br />
+                    {
+                      evaluacionRestricciones.cantidadCondicionales
+                    }
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "rgba(255,255,255,0.7)",
+                      borderRadius: 12,
+                      padding: 12,
+                    }}
+                  >
+                    <strong>
+                      Incompatibles
+                    </strong>
+                    <br />
+                    {
+                      evaluacionRestricciones.cantidadIncompatibles
+                    }
+                  </div>
+
+                  <div
+                    style={{
+                      background:
+                        "rgba(255,255,255,0.7)",
+                      borderRadius: 12,
+                      padding: 12,
+                    }}
+                  >
+                    <strong>
+                      Desconocidas
+                    </strong>
+                    <br />
+                    {
+                      evaluacionRestricciones.cantidadDesconocidas
+                    }
+                  </div>
+                </div>
+
+                {evaluacionRestricciones
+                  .resultados.length ===
+                0 ? (
+                  <div
+                    style={{
+                      background:
+                        "rgba(255,255,255,0.7)",
+                      borderRadius: 12,
+                      padding: 14,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    No se detectaron
+                    restricciones
+                    registradas cerca
+                    de la geometría de
+                    esta ruta.
+                    <br />
+                    <strong>
+                      Esto no significa
+                      que la ruta esté
+                      legalmente
+                      verificada.
+                    </strong>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: 12,
+                    }}
+                  >
+                    {evaluacionRestricciones.resultados.map(
+                      (
+                        resultadoRestriccion
+                      ) => (
+                        <div
+                          key={
+                            resultadoRestriccion
+                              .restriccion
+                              .id
+                          }
+                          style={{
+                            background:
+                              "rgba(255,255,255,0.8)",
+                            borderRadius: 14,
+                            padding: 15,
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontWeight: 900,
+                              fontSize: 17,
+                            }}
+                          >
+                            {
+                              resultadoRestriccion
+                                .restriccion
+                                .nombre
+                            }
+                          </div>
+
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontWeight: 700,
+                            }}
+                          >
+                            Estado:{" "}
+                            {
+                              resultadoRestriccion.estado
+                            }
+                          </div>
+
+                          {resultadoRestriccion.distanciaAproxKm !==
+                            undefined && (
+                            <div
+                              style={{
+                                marginTop: 5,
+                                fontSize: 14,
+                              }}
+                            >
+                              Distancia
+                              aproximada:
+                              {" "}
+                              {
+                                resultadoRestriccion.distanciaAproxKm
+                              }{" "}
+                              km
+                            </div>
+                          )}
+
+                          <p
+                            style={{
+                              marginBottom: 0,
+                              lineHeight: 1.5,
+                            }}
+                          >
+                            {
+                              resultadoRestriccion.motivo
+                            }
+                          </p>
+                        </div>
+                      )
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div
               style={{
                 marginTop: 20,
                 background: "#fffbea",
-                border: "1px solid #f5df86",
+                border:
+                  "1px solid #f5df86",
                 borderRadius: 16,
                 padding: 18,
                 color: "#7c4a03",
                 lineHeight: 1.55,
               }}
             >
-              <strong>⚠️ Importante</strong>
+              <strong>
+                ⚠️ Importante
+              </strong>
 
               <p>
-                Esta versión calcula una ruta vial
-                mediante servicios de mapas y
-                conserva la geometría completa del
-                recorrido.
+                La ruta se calcula
+                mediante un servicio
+                vial general y su
+                geometría se cruza con
+                la base de restricciones
+                disponible.
               </p>
 
               <p>
-                Todavía no verifica las restricciones
-                específicas de cada tramo: puentes,
-                peso por eje, horarios, corredores
-                habilitados, permisos, restricciones
-                locales o condiciones particulares de
-                la infraestructura.
+                La ausencia de una
+                restricción detectada
+                no constituye por sí
+                sola autorización legal
+                para circular.
               </p>
 
               <p
@@ -1044,10 +1491,11 @@ export default function Home() {
                   fontWeight: 700,
                 }}
               >
-                Por eso “RUTA NO VERIFICADA” no
-                significa que la ruta esté prohibida:
-                significa que todavía falta comprobarla
-                contra nuestra base de restricciones.
+                Camionero AR debe
+                utilizar información
+                oficial y actualizada
+                antes de presentar una
+                ruta como habilitada.
               </p>
             </div>
           </section>
@@ -1061,10 +1509,33 @@ export default function Home() {
             paddingTop: 10,
           }}
         >
-          Camionero AR · Planificación de transporte
-          pesado en Argentina
+          Camionero AR · Planificación
+          de transporte pesado en
+          Argentina
         </footer>
       </div>
     </main>
   );
-                  }
+}
+
+const inputStyle: React.CSSProperties =
+  {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "13px 14px",
+    borderRadius: 12,
+    border:
+      "1px solid #d5dce5",
+    marginBottom: 16,
+    fontSize: 16,
+    background: "white",
+  };
+
+const gridStyle: React.CSSProperties =
+  {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(2, minmax(0, 1fr))",
+    gap: 12,
+    lineHeight: 1.5,
+  };
