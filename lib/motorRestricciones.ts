@@ -1,154 +1,541 @@
-export type TipoVehiculo =
-  | "camion"
-  | "camionAcoplado"
-  | "camionSemirremolque"
-  | "bitren";
+import {
+  restricciones,
+  Restriccion,
+  TipoVehiculo,
+  EstadoRestriccion,
+  PuntoRestriccion,
+} from "../datos/restricciones";
 
-export type TipoRestriccion =
-  | "PESO"
-  | "PESO_EJE"
-  | "ALTURA"
-  | "ANCHO"
-  | "LARGO"
-  | "HORARIA"
-  | "CIRCULACION"
-  | "PUENTE"
-  | "PERMISO";
-
-export type EstadoRestriccion =
-  | "VERIFICADA"
-  | "CONDICIONAL"
-  | "INCOMPATIBLE"
-  | "DESCONOCIDA";
-
-export type PuntoRestriccion = {
+export type PuntoRuta = {
   lat: number;
   lon: number;
-  descripcion?: string;
 };
 
-export type Restriccion = {
-  id: string;
-  nombre: string;
-  tipo: TipoRestriccion;
-  ruta: string;
-  descripcion: string;
-
-  limite?: number;
-  unidad?: "t" | "m" | "t/eje";
-
-  vehiculos?: TipoVehiculo[];
-
-  desdeKm?: number;
-  hastaKm?: number;
-
-  puntos?: PuntoRestriccion[];
-
-  horario?: string;
-
-  condiciones?: string[];
-
+export type ResultadoRestriccion = {
+  restriccion: Restriccion;
   estado: EstadoRestriccion;
-
-  fuente: string;
-  documento?: string;
-  fechaVerificacion: string;
+  motivo: string;
+  distanciaAproxKm?: number;
+  puntoDetectado?: PuntoRestriccion;
 };
 
-export const restricciones: Restriccion[] = [
-  {
-    id: "puente-mitre-rn12",
-    nombre: "Puente Bartolomé Mitre",
-    tipo: "PUENTE",
-    ruta: "RN 12",
+export type EvaluacionRestricciones = {
+  estadoGeneral: EstadoRestriccion;
+  resultados: ResultadoRestriccion[];
+  cantidadVerificadas: number;
+  cantidadCondicionales: number;
+  cantidadIncompatibles: number;
+  cantidadDesconocidas: number;
+};
 
-    descripcion:
-      "Puente Bartolomé Mitre integrante del Complejo Zárate - Brazo Largo. La circulación de vehículos de cargas debe analizarse considerando las condiciones estructurales, peso total, peso por eje y eventuales restricciones vigentes.",
+/**
+ * Distancia aproximada entre dos coordenadas geográficas.
+ */
+function distanciaKm(
+  punto1: PuntoRuta,
+  punto2: PuntoRuta
+): number {
+  const radioTierraKm = 6371;
 
-    limite: 150,
-    unidad: "t",
+  const lat1 =
+    (punto1.lat * Math.PI) / 180;
 
-    vehiculos: [
-      "camion",
-      "camionAcoplado",
-      "camionSemirremolque",
-      "bitren"
-    ],
+  const lat2 =
+    (punto2.lat * Math.PI) / 180;
 
-    puntos: [
-      {
-        lat: -34.103261,
-        lon: -59.002664,
-        descripcion:
-          "Referencia geográfica del Puente Bartolomé Mitre"
-      }
-    ],
+  const deltaLat =
+    ((punto2.lat - punto1.lat) * Math.PI) /
+    180;
 
-    condiciones: [
-      "Consultar condiciones vigentes de la Dirección Nacional de Vialidad.",
-      "Verificar límite de peso por eje.",
-      "Verificar peso bruto total del vehículo.",
-      "Verificar restricciones eventuales antes de circular.",
-      "La proximidad geográfica al puente no constituye autorización de circulación."
-    ],
+  const deltaLon =
+    ((punto2.lon - punto1.lon) * Math.PI) /
+    180;
 
-    estado: "CONDICIONAL",
+  const a =
+    Math.sin(deltaLat / 2) *
+      Math.sin(deltaLat / 2) +
+    Math.cos(lat1) *
+      Math.cos(lat2) *
+      Math.sin(deltaLon / 2) *
+      Math.sin(deltaLon / 2);
 
-    fuente:
-      "Dirección Nacional de Vialidad",
+  const c =
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1 - a)
+    );
 
-    documento:
-      "Listado de Puentes Limitados - julio 2025",
+  return radioTierraKm * c;
+}
 
-    fechaVerificacion:
-      "2026-09-01"
-  },
+/**
+ * Convierte coordenadas geográficas a una aproximación
+ * plana local en kilómetros.
+ *
+ * Se utiliza solamente para calcular distancias pequeñas
+ * entre una ruta y una restricción.
+ */
+function proyectarKm(
+  punto: PuntoRuta,
+  latitudReferencia: number
+): {
+  x: number;
+  y: number;
+} {
+  const radioTierraKm = 6371;
 
-  {
-    id: "puente-urquiza-rn12",
-    nombre: "Puente Justo José de Urquiza",
-    tipo: "PUENTE",
-    ruta: "RN 12",
+  const lat =
+    (punto.lat * Math.PI) / 180;
 
-    descripcion:
-      "Puente Justo José de Urquiza integrante del Complejo Zárate - Brazo Largo. La circulación de vehículos de cargas debe analizarse considerando las condiciones estructurales, peso total, peso por eje y eventuales restricciones vigentes.",
+  const lon =
+    (punto.lon * Math.PI) / 180;
 
-    limite: 150,
-    unidad: "t",
+  const latRef =
+    (latitudReferencia * Math.PI) / 180;
 
-    vehiculos: [
-      "camion",
-      "camionAcoplado",
-      "camionSemirremolque",
-      "bitren"
-    ],
+  return {
+    x:
+      radioTierraKm *
+      lon *
+      Math.cos(latRef),
 
-    puntos: [
-      {
-        lat: -33.909828,
-        lon: -58.884831,
-        descripcion:
-          "Referencia geográfica del Puente Justo José de Urquiza"
-      }
-    ],
+    y:
+      radioTierraKm * lat,
+  };
+}
 
-    condiciones: [
-      "Consultar condiciones vigentes de la Dirección Nacional de Vialidad.",
-      "Verificar límite de peso por eje.",
-      "Verificar peso bruto total del vehículo.",
-      "Verificar restricciones eventuales antes de circular.",
-      "La proximidad geográfica al puente no constituye autorización de circulación."
-    ],
+/**
+ * Calcula la distancia mínima entre un punto
+ * y un segmento de la ruta.
+ */
+function distanciaPuntoSegmentoKm(
+  punto: PuntoRuta,
+  inicioSegmento: PuntoRuta,
+  finSegmento: PuntoRuta
+): number {
+  const latitudReferencia =
+    (punto.lat +
+      inicioSegmento.lat +
+      finSegmento.lat) /
+    3;
 
-    estado: "CONDICIONAL",
+  const p = proyectarKm(
+    punto,
+    latitudReferencia
+  );
 
-    fuente:
-      "Dirección Nacional de Vialidad",
+  const a = proyectarKm(
+    inicioSegmento,
+    latitudReferencia
+  );
 
-    documento:
-      "Listado de Puentes Limitados - julio 2025",
+  const b = proyectarKm(
+    finSegmento,
+    latitudReferencia
+  );
 
-    fechaVerificacion:
-      "2026-09-01"
+  const abX = b.x - a.x;
+  const abY = b.y - a.y;
+
+  const apX = p.x - a.x;
+  const apY = p.y - a.y;
+
+  const longitudAB2 =
+    abX * abX + abY * abY;
+
+  if (longitudAB2 === 0) {
+    return Math.sqrt(
+      apX * apX + apY * apY
+    );
   }
-];
+
+  let t =
+    (apX * abX +
+      apY * abY) /
+    longitudAB2;
+
+  t = Math.max(
+    0,
+    Math.min(1, t)
+  );
+
+  const puntoCercanoX =
+    a.x + t * abX;
+
+  const puntoCercanoY =
+    a.y + t * abY;
+
+  const dx =
+    p.x - puntoCercanoX;
+
+  const dy =
+    p.y - puntoCercanoY;
+
+  return Math.sqrt(
+    dx * dx + dy * dy
+  );
+}
+
+/**
+ * Calcula la distancia mínima entre una restricción
+ * puntual y toda la geometría de la ruta.
+ *
+ * A diferencia de una comparación solamente entre
+ * vértices, analiza todos los segmentos de la línea.
+ */
+function distanciaRutaAPunto(
+  ruta: PuntoRuta[],
+  punto: PuntoRestriccion
+): number | undefined {
+  if (ruta.length === 0) {
+    return undefined;
+  }
+
+  if (ruta.length === 1) {
+    return distanciaKm(
+      ruta[0],
+      {
+        lat: punto.lat,
+        lon: punto.lon,
+      }
+    );
+  }
+
+  const puntoRestriccion: PuntoRuta = {
+    lat: punto.lat,
+    lon: punto.lon,
+  };
+
+  let menorDistancia = Infinity;
+
+  for (
+    let i = 0;
+    i < ruta.length - 1;
+    i++
+  ) {
+    const distancia =
+      distanciaPuntoSegmentoKm(
+        puntoRestriccion,
+        ruta[i],
+        ruta[i + 1]
+      );
+
+    if (
+      distancia < menorDistancia
+    ) {
+      menorDistancia = distancia;
+    }
+  }
+
+  if (
+    !Number.isFinite(
+      menorDistancia
+    )
+  ) {
+    return undefined;
+  }
+
+  return menorDistancia;
+}
+
+/**
+ * Busca el punto de restricción más cercano
+ * a la geometría completa de la ruta.
+ */
+function buscarPuntoMasCercano(
+  ruta: PuntoRuta[],
+  puntos: PuntoRestriccion[]
+):
+  | {
+      distancia: number;
+      punto: PuntoRestriccion;
+    }
+  | undefined {
+  let mejorResultado:
+    | {
+        distancia: number;
+        punto: PuntoRestriccion;
+      }
+    | undefined;
+
+  for (const punto of puntos) {
+    const distancia =
+      distanciaRutaAPunto(
+        ruta,
+        punto
+      );
+
+    if (
+      distancia === undefined
+    ) {
+      continue;
+    }
+
+    if (
+      mejorResultado ===
+        undefined ||
+      distancia <
+        mejorResultado.distancia
+    ) {
+      mejorResultado = {
+        distancia,
+        punto,
+      };
+    }
+  }
+
+  return mejorResultado;
+}
+
+/**
+ * Determina si la restricción aplica
+ * al tipo de vehículo seleccionado.
+ */
+function aplicaAVehiculo(
+  restriccion: Restriccion,
+  vehiculo: TipoVehiculo
+): boolean {
+  if (
+    !restriccion.vehiculos
+  ) {
+    return true;
+  }
+
+  return restriccion.vehiculos.includes(
+    vehiculo
+  );
+}
+
+/**
+ * Evalúa una restricción individual.
+ *
+ * Importante:
+ * La cercanía geográfica NO significa automáticamente
+ * que exista una prohibición ni una autorización.
+ *
+ * El motor solamente detecta una posible coincidencia
+ * con la base de restricciones.
+ */
+function evaluarUnaRestriccion(
+  ruta: PuntoRuta[],
+  restriccion: Restriccion,
+  radioBusquedaKm: number
+):
+  | ResultadoRestriccion
+  | undefined {
+  /**
+   * Si la restricción todavía no tiene
+   * coordenadas registradas, no podemos
+   * determinar si la ruta la atraviesa.
+   */
+  if (
+    !restriccion.puntos ||
+    restriccion.puntos.length === 0
+  ) {
+    return {
+      restriccion,
+      estado: "DESCONOCIDA",
+      motivo:
+        "La restricción existe en la base, pero todavía no tiene puntos geográficos suficientes para confirmar que la ruta la atraviesa.",
+    };
+  }
+
+  const puntoMasCercano =
+    buscarPuntoMasCercano(
+      ruta,
+      restriccion.puntos
+    );
+
+  if (
+    !puntoMasCercano
+  ) {
+    return {
+      restriccion,
+      estado: "DESCONOCIDA",
+      motivo:
+        "No fue posible calcular la distancia entre la geometría de la ruta y los puntos registrados de la restricción.",
+    };
+  }
+
+  /**
+   * Radio de búsqueda preliminar.
+   *
+   * Esto NO representa una intersección legal.
+   * Solamente determina si debemos mostrar
+   * la restricción para revisión.
+   */
+  if (
+    puntoMasCercano.distancia >
+    radioBusquedaKm
+  ) {
+    return undefined;
+  }
+
+  const distanciaRedondeada =
+    Math.round(
+      puntoMasCercano.distancia * 100
+    ) / 100;
+
+  let motivo =
+    "La ruta pasa cerca de una ubicación registrada de la restricción.";
+
+  if (
+    restriccion.estado ===
+    "CONDICIONAL"
+  ) {
+    motivo =
+      "La ruta pasa cerca de una restricción condicional. Deben verificarse las condiciones específicas antes de autorizar la circulación.";
+  }
+
+  if (
+    restriccion.estado ===
+    "INCOMPATIBLE"
+  ) {
+    motivo =
+      "La ruta pasa cerca de una restricción marcada como incompatible con la configuración analizada.";
+  }
+
+  if (
+    restriccion.estado ===
+    "VERIFICADA"
+  ) {
+    motivo =
+      "La ruta pasa cerca de una restricción verificada registrada en la base.";
+  }
+
+  return {
+    restriccion,
+    estado:
+      restriccion.estado,
+    motivo,
+    distanciaAproxKm:
+      distanciaRedondeada,
+    puntoDetectado:
+      puntoMasCercano.punto,
+  };
+}
+
+/**
+ * Evalúa todas las restricciones aplicables
+ * a una ruta y vehículo determinados.
+ */
+export function evaluarRestricciones(
+  ruta: PuntoRuta[],
+  vehiculo: TipoVehiculo,
+  radioBusquedaKm: number = 1
+): EvaluacionRestricciones {
+  const resultados:
+    ResultadoRestriccion[] =
+    [];
+
+  if (ruta.length === 0) {
+    return {
+      estadoGeneral:
+        "DESCONOCIDA",
+      resultados: [],
+      cantidadVerificadas: 0,
+      cantidadCondicionales: 0,
+      cantidadIncompatibles: 0,
+      cantidadDesconocidas: 0,
+    };
+  }
+
+  for (const restriccion of restricciones) {
+    if (
+      !aplicaAVehiculo(
+        restriccion,
+        vehiculo
+      )
+    ) {
+      continue;
+    }
+
+    const resultado =
+      evaluarUnaRestriccion(
+        ruta,
+        restriccion,
+        radioBusquedaKm
+      );
+
+    if (resultado) {
+      resultados.push(
+        resultado
+      );
+    }
+  }
+
+  const cantidadVerificadas =
+    resultados.filter(
+      (resultado) =>
+        resultado.estado ===
+        "VERIFICADA"
+    ).length;
+
+  const cantidadCondicionales =
+    resultados.filter(
+      (resultado) =>
+        resultado.estado ===
+        "CONDICIONAL"
+    ).length;
+
+  const cantidadIncompatibles =
+    resultados.filter(
+      (resultado) =>
+        resultado.estado ===
+        "INCOMPATIBLE"
+    ).length;
+
+  const cantidadDesconocidas =
+    resultados.filter(
+      (resultado) =>
+        resultado.estado ===
+        "DESCONOCIDA"
+    ).length;
+
+  /**
+   * Prioridad de seguridad:
+   *
+   * INCOMPATIBLE
+   *       ↓
+   * CONDICIONAL
+   *       ↓
+   * DESCONOCIDA
+   *       ↓
+   * VERIFICADA
+   */
+  let estadoGeneral:
+    EstadoRestriccion =
+    "DESCONOCIDA";
+
+  if (
+    cantidadIncompatibles > 0
+  ) {
+    estadoGeneral =
+      "INCOMPATIBLE";
+  } else if (
+    cantidadCondicionales > 0
+  ) {
+    estadoGeneral =
+      "CONDICIONAL";
+  } else if (
+    cantidadDesconocidas > 0
+  ) {
+    estadoGeneral =
+      "DESCONOCIDA";
+  } else if (
+    cantidadVerificadas > 0
+  ) {
+    estadoGeneral =
+      "VERIFICADA";
+  }
+
+  return {
+    estadoGeneral,
+    resultados,
+    cantidadVerificadas,
+    cantidadCondicionales,
+    cantidadIncompatibles,
+    cantidadDesconocidas,
+  };
+}
