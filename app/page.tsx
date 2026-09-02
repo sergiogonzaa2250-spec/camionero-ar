@@ -1,9 +1,8 @@
-"use client";
-
-import { useState } from "react";
-
 import {
   evaluarRestricciones,
+} from "../lib/motorRestricciones";
+
+import type {
   EvaluacionRestricciones,
 } from "../lib/motorRestricciones";
 
@@ -250,10 +249,10 @@ export default function Home() {
               Number(punto[1])
             )
         )
-        .map((punto) => [
-          Number(punto[0]),
-          Number(punto[1]),
-        ]);
+        .map((punto: [number, number]) => [
+  Number(punto[0]),
+  Number(punto[1]),
+]);
 
     if (
       coordenadasValidas.length < 2
